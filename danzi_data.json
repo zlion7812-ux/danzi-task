@@ -1,0 +1,63 @@
+{
+  "child_id": "default_child",
+  "state": {
+    "points": 12,
+    "last_date": "2026-05-07",
+    "streak": 1,
+    "defeated_monsters": [
+      "task_2",
+      "task_3",
+      "task_4",
+      "task_5"
+    ],
+    "portal_used": false,
+    "bonus_quests": [],
+    "exchange_history": [],
+    "points_history": [
+      {
+        "time": "05-07 21:41",
+        "source": "讨伐",
+        "change": 3,
+        "description": "完成任务: 阅读 (学习了18分钟)",
+        "total": 12
+      },
+      {
+        "time": "05-07 20:42",
+        "source": "魔法掉落",
+        "change": 1,
+        "description": "🍬 小糖果",
+        "total": 9
+      },
+      {
+        "time": "05-07 20:42",
+        "source": "讨伐",
+        "change": 1,
+        "description": "完成任务: 物品归位",
+        "total": 8
+      },
+      {
+        "time": "05-07 20:19",
+        "source": "魔法掉落",
+        "change": 1,
+        "description": "🍬 小糖果",
+        "total": 7
+      },
+      {
+        "time": "05-07 20:19",
+        "source": "讨伐",
+        "change": 3,
+        "description": "完成任务: 复习 (学习了22分钟)",
+        "total": 6
+      },
+      {
+        "time": "05-07 19:19",
+        "source": "讨伐",
+        "change": 3,
+        "description": "完成任务: 作业",
+        "total": 3
+      }
+    ],
+    "weekly_exchanges": {},
+    "active_timer": null
+  }
+}

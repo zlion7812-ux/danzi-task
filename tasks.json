@@ -1,0 +1,47 @@
+[
+    {
+        "id": "task_1",
+        "monster_id": "mon_1",
+        "name": "起床",
+        "description": "🌅 晨间勇者\n\n• 7:15前自己穿好衣服\n• 叠好被子\n• 完成后请妈妈确认",
+        "points": 3,
+        "enabled": true,
+        "order": 1
+    },
+    {
+        "id": "task_2",
+        "monster_id": "mon_7",
+        "name": "作业",
+        "description": "📚 作业讨伐\n\n• 19:30前完成学校作业\n• 字迹工整，正确率达标\n• 如果没有作业，自动转为复习时间",
+        "points": 5,
+        "enabled": true,
+        "order": 2
+    },
+    {
+        "id": "task_3",
+        "monster_id": "mon_6",
+        "name": "复习",
+        "description": "📖 知识复习\n\n• 19:30-20:30 复习语文和数学\n• 妈妈会抽查提问\n• 如果当天没有新内容，改为预习明天课程",
+        "points": 4,
+        "enabled": true,
+        "order": 3
+    },
+    {
+        "id": "task_4",
+        "monster_id": "mon_3",
+        "name": "物品归位",
+        "description": "🎒 物品归位\n\n• 作业和复习都完成后才做\n• 桌面杂物清理干净\n• 书本放回原位\n• 书包拉好拉链\n• 检查明天要带的物品",
+        "points": 3,
+        "enabled": true,
+        "order": 4
+    },
+    {
+        "id": "task_5",
+        "monster_id": "mon_8",
+        "name": "阅读",
+        "description": "🐉 阅读冒险\n\n• 当天完成15-30分钟阅读\n• 读完后来找妈妈，讲一讲故事内容\n• 💥超额奖励：每多读20分钟+3分",
+        "points": 3,
+        "enabled": true,
+        "order": 5
+    }
+]

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蛋仔勇者之路 - 管理后台</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="admin-container">
+    <div class="admin-header-bar">
+        <h1 class="admin-h1">🐉 勇者之路 · 管理后台</h1>
+        <button class="logout-btn" onclick="adminLogout()">🚪 退出登录</button>
+    </div>
+
+    <!-- 任务管理 -->
+    <h2 class="admin-h2">📋 每日任务配置</h2>
+    <div class="task-list" id="taskList"></div>
+
+    <button class="success" onclick="adminShowAddTaskForm()">➕ 添加新任务</button>
+    <div id="addTaskForm" class="add-form" style="display:none;">
+        <h3>新建任务</h3>
+        <input type="text" id="newTaskName" placeholder="任务名称（如：自主起床）">
+        <textarea id="newTaskDesc" placeholder="任务描述" rows="2"></textarea>
+        <select id="newTaskMonster"><option value="">-- 选择怪物 --</option></select>
+        <input type="number" id="newTaskPoints" placeholder="积分" value="2">
+        <div class="form-row">
+            <button class="success" onclick="adminAddTask()">✅ 确认添加</button>
+            <button onclick="adminHideAddTaskForm()">❌ 取消</button>
+        </div>
+    </div>
+
+    <hr>
+
+    <!-- 怪物图鉴管理 -->
+    <h2 class="admin-h2">👾 怪物图鉴</h2>
+    <div class="monster-list" id="monsterList"></div>
+
+    <button class="success" onclick="adminShowAddMonsterForm()">➕ 添加新怪物</button>
+    <div id="addMonsterForm" class="add-form" style="display:none;">
+        <h3>新建怪物</h3>
+        <input type="text" id="newMonsterName" placeholder="怪物名称（如：瞌睡虫）">
+        <input type="text" id="newMonsterIcon" placeholder="图标（如：🐛）" value="👾">
+        <input type="number" id="newMonsterPoints" placeholder="默认积分" value="2">
+        <textarea id="newMonsterDesc" placeholder="怪物描述" rows="2"></textarea>
+        <div class="form-row">
+            <button class="success" onclick="adminAddMonster()">✅ 确认添加</button>
+            <button onclick="adminHideAddMonsterForm()">❌ 取消</button>
+        </div>
+    </div>
+
+    <hr>
+
+    <!-- 系统设置 -->
+    <h2 class="admin-h2">⚙️ 系统设置</h2>
+    <div class="task-list" style="background:#0f0f23;">
+        <div style="padding:15px;">
+            <div class="config-item">
+                <label>🎯 连胜规则</label>
+                <select id="streakRuleSelect" class="config-select">
+                    <option value="login">🟢 宽松模式（登录即涨连胜）</option>
+                    <option value="clear_all">🔴 严格模式（必须全清才涨连胜）</option>
+                </select>
+                <div class="config-hint">
+                    🟢 宽松：只要孩子当天打开页面，连胜天数就会+1（适合鼓励每天使用）<br>
+                    🔴 严格：孩子必须打败所有怪物，连胜天数才会+1（适合培养自律）
+                </div>
+            </div>
+            <div class="button-group">
+                <button class="success" onclick="adminSaveSystemConfig()">💾 保存设置</button>
+                <button class="warning" onclick="adminResetStreak()">🔄 重置连胜天数</button>
+                <button class="danger" onclick="adminResetChildDay()">🔄 重置今日任务</button>
+                <button class="danger" onclick="adminResetAllData()" style="background:#8b0000;">⚠️ 重置所有数据</button>
+            </div>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="tips">
+        💡 提示：<br>
+        • 修改任务后，孩子的主页面会自动更新（刷新即可）<br>
+        • 禁用任务后，该任务不会出现在孩子的地图上<br>
+        • 调整 order 数值可以改变任务的显示顺序（数字越小越靠左）<br>
+        • 删除任务时，如果孩子今天已经完成了这个任务，已完成状态会保留（不会报错）<br>
+        • 怪物被删除前，请先解除相关任务的绑定<br>
+        • 连胜规则切换后，从第二天开始生效<br>
+        • 重置今日任务：清空孩子今天的任务完成进度，积分不变
+    </div>
+</div>
+
+<script src="/static/script.js"></script>
+<script>
+    // 管理员页面初始化
+    adminLoadData();
+</script>
+</body>
+</html>

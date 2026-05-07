@@ -1,0 +1,86 @@
+[
+    {
+        "id": "mon_1",
+        "name": "小野猪",
+        "icon": "🐗",
+        "default_points": 1,
+        "description": "弱小的野兽，起床气的化身"
+    },
+    {
+        "id": "mon_2",
+        "name": "蘑菇怪",
+        "icon": "🍄",
+        "default_points": 1,
+        "description": "挡路的毒蘑菇，让人磨蹭的坏蛋"
+    },
+    {
+        "id": "mon_3",
+        "name": "狗头人",
+        "icon": "🧙",
+        "default_points": 2,
+        "description": "狡猾的洞穴居民，偷时间的盗贼"
+    },
+    {
+        "id": "mon_4",
+        "name": "巨型蜘蛛",
+        "icon": "🕷️",
+        "default_points": 2,
+        "description": "织网的掠食者，拖延的化身"
+    },
+    {
+        "id": "mon_5",
+        "name": "影牙狼",
+        "icon": "🐺",
+        "default_points": 2,
+        "description": "嗜血的猎手，分心的根源"
+    },
+    {
+        "id": "mon_6",
+        "name": "鱼人",
+        "icon": "🧌",
+        "default_points": 2,
+        "description": "沼泽中的麻烦精，干扰学习的捣蛋鬼"
+    },
+    {
+        "id": "mon_7",
+        "name": "骷髅战士",
+        "icon": "💀",
+        "default_points": 3,
+        "description": "亡灵大军的一员，作业的克星"
+    },
+    {
+        "id": "mon_8",
+        "name": "雏龙",
+        "icon": "🐉",
+        "default_points": 3,
+        "description": "幼小的龙族，阅读的守护者"
+    },
+    {
+        "id": "mon_9",
+        "name": "血色战士",
+        "icon": "⚔️",
+        "default_points": 3,
+        "description": "狂热的十字军，复习路上的阻碍"
+    },
+    {
+        "id": "mon_10",
+        "name": "石像鬼",
+        "icon": "🦇",
+        "default_points": 3,
+        "description": "远古的守护者，专注力的考验"
+    },
+    {
+        "id": "mon_11",
+        "name": "食人魔",
+        "icon": "👹",
+        "default_points": 3,
+        "description": "笨重的巨魔，自律的挑战"
+    },
+    {
+        "id": "mon_12",
+        "name": "炎魔",
+        "icon": "🔥",
+        "default_points": 4,
+        "description": "烈焰领主，终极BOSS"
+    }
+]

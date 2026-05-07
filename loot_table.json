@@ -1,0 +1,44 @@
+[
+    {
+        "name": "🍬 小糖果",
+        "add_points": 1,
+        "weight": 40,
+        "effect": "+1积分",
+        "description": "普通掉落"
+    },
+    {
+        "name": "🎒 免整理卡",
+        "add_points": 0,
+        "weight": 20,
+        "effect": "下次免做物品归位",
+        "description": "功能道具"
+    },
+    {
+        "name": "⭐ 星星碎片",
+        "add_points": 2,
+        "weight": 20,
+        "effect": "+2积分",
+        "description": "普通掉落"
+    },
+    {
+        "name": "📺 动画券",
+        "add_points": 0,
+        "weight": 10,
+        "effect": "周末多看10分钟动画",
+        "description": "功能道具"
+    },
+    {
+        "name": "🎁 神秘盲盒",
+        "add_points": 3,
+        "weight": 5,
+        "effect": "+3积分",
+        "description": "稀有掉落"
+    },
+    {
+        "name": "🏆 传说蛋仔皮肤",
+        "add_points": 5,
+        "weight": 3,
+        "effect": "+5积分",
+        "description": "传说掉落"
+    }
+]

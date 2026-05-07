@@ -1,0 +1,44 @@
+[
+    {
+        "id": "b1",
+        "name": "💖 爱的拥抱",
+        "desc": "给妈妈一个拥抱",
+        "points_range": [1, 4],
+        "description": "表达爱意的小任务"
+    },
+    {
+        "id": "b2",
+        "name": "💧 生命之水",
+        "desc": "喝完一整杯水",
+        "points_range": [1, 4],
+        "description": "健康小习惯"
+    },
+    {
+        "id": "b3",
+        "name": "🎨 小小画家",
+        "desc": "画一幅蛋仔相关的画",
+        "points_range": [1, 4],
+        "description": "创意小任务"
+    },
+    {
+        "id": "b4",
+        "name": "📖 小小朗读家",
+        "desc": "大声朗读一首诗或一段故事",
+        "points_range": [1, 4],
+        "description": "朗读练习"
+    },
+    {
+        "id": "b5",
+        "name": "🧹 家务小能手",
+        "desc": "做一件帮助家人的小事",
+        "points_range": [1, 4],
+        "description": "家务小帮手"
+    },
+    {
+        "id": "b6",
+        "name": "🎲 蛋仔技巧",
+        "desc": "教妈妈一个蛋仔走位技巧",
+        "points_range": [1, 4],
+        "description": "分享小技巧"
+    }
+]

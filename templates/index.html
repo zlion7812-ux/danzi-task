@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🥚 蛋仔勇者之路</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🐉 蛋仔勇者之路 🗡️</h1>
+        <div class="stats">
+            <div class="points-box">💎 <span id="pointsDisplay">{{ user_points }}</span></div>
+            <div class="streak-box">🔥 连战 <span id="streakDisplay">{{ streak }}</span> 天</div>
+            <div class="rule-box" title="{{ rule_tip }}">{{ rule_display }}</div>
+        </div>
+    </div>
+
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('quest')">⚔️ 讨伐</button>
+        <button class="tab-btn" onclick="switchTab('shop')">🏪 赏金所</button>
+        <button class="tab-btn" onclick="switchTab('history')">📜 战利品记录</button>
+        <button class="tab-btn" onclick="switchTab('points')">💰 积分史记</button>
+    </div>
+
+    <div id="tab-quest" class="tab-content active">
+        <div class="map-area">
+            <!-- 第一行：普通任务 -->
+            <div class="task-row">
+                <div class="row-title">⚔️ 每日讨伐 ⚔️</div>
+                {% for task in tasks %}
+                    {% if "复习" not in task.name and "阅读" not in task.name %}
+                        <div class="monster-card {% if task.id in defeated_ids %}defeated{% endif %}" onclick="fightMonster('{{ task.id }}')">
+                            <div class="card-top">
+                                <div class="monster-icon">{{ task.icon }}</div>
+                                <div class="monster-name">{{ task.name }}</div>
+                            </div>
+                            <div class="card-bottom">
+                                <div class="monster-status">
+                                    {% if task.id in defeated_ids %}✅ 已讨伐{% else %}⚠️ 拦路中{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <!-- 分隔线 -->
+            <div class="separator" style="height:2px; background:linear-gradient(90deg, transparent, #e6b422, transparent); margin:20px 0 16px 0;"></div>
+
+            <!-- 第二行：计时任务 -->
+            <div class="task-row">
+                <div class="row-title">📚 修行之路 📚</div>
+                {% for task in tasks %}
+                    {% if "复习" in task.name or "阅读" in task.name %}
+                        <div class="monster-card no-click {% if task.id in defeated_ids %}defeated{% endif %}" id="card-{{ task.id }}">
+                            <div class="card-top">
+                                <div class="monster-icon">{{ task.icon }}</div>
+                                <div class="monster-name">{{ task.name }}</div>
+                            </div>
+                            <div class="card-bottom">
+                                {% if task.id in defeated_ids %}
+                                    <div class="monster-status">✅ 已讨伐</div>
+                                {% else %}
+                                    <div class="monster-status" id="timer-status-{{ task.id }}">⏰ 未开始</div>
+                                    <div class="timer-buttons">
+                                        <button class="timer-btn start-timer-btn" data-id="{{ task.id }}" data-name="{{ task.name }}">▶ 开始</button>
+                                        <button class="timer-btn end end-timer-btn" data-id="{{ task.id }}" data-name="{{ task.name }}">⏹ 结束</button>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <!-- 传送门区域 -->
+            <div class="portal-area">
+                {% if all_defeated and not portal_used and not bonus_active %}
+                    <button class="portal-btn" onclick="openPortal()">🌀 神秘传送门 🌀</button>
+                {% elif bonus_active %}
+                    <div style="background:#2a1a3a; border-radius:40px; padding:12px;">
+                        <div>✨ 传送门秘境 ✨</div>
+                        {% for bq in bonus_quests %}
+                            <div class="bonus-quest" id="bonus-{{ loop.index }}">
+                                <div><strong>{{ bq.name }}</strong><br><small>{{ bq.desc }}</small><br><span>+{{ bq.points_range[0] }}-{{ bq.points_range[1] }}积分</span></div>
+                                <button class="complete-bonus-btn" onclick="completeBonus({{ loop.index0 }})">✨ 完成</button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% elif all_defeated and portal_used %}
+                    <div>🌟 今日传送门已探索，明日再临 🌟</div>
+                {% else %}
+                    <div style="opacity:0.5">🔒 讨伐全部恶兽，传送门才会出现 🔒</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="loot-box" id="lootDisplay">🗡️ 点击怪物开始讨伐，勇者！ 🛡️</div>
+        <div class="message" id="msgArea">💡 每讨伐一只怪物，获得赏金 + 随机魔法道具！</div>
+    </div>
+
+    <div id="tab-shop" class="tab-content">
+        <div class="loot-box">💰 当前勇者积分: <strong>{{ user_points }}</strong></div>
+        {% for item in shop_items %}
+            <div class="shop-item">
+                <div><span style="font-size:1.4rem">{{ item.icon }}</span> {{ item.name }}<br><span style="color:#ffaa44">{{ item.price }}积分</span></div>
+                <button class="complete-bonus-btn" onclick="buyItem({{ item.id }})">兑换</button>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div id="tab-history" class="tab-content">
+        <div class="loot-box">📜 兑换记录</div>
+        {% for rec in exchange_history %}
+            <div class="history-item">✅ {{ rec.time }} — {{ rec.item_name }} ({{ rec.price }}积分)</div>
+        {% else %}
+            <div>✨ 暂无记录</div>
+        {% endfor %}
+    </div>
+
+    <div id="tab-points" class="tab-content">
+        <div class="loot-box">📊 积分史记</div>
+        <div class="points-list">
+            {% for rec in points_history %}
+                <div class="points-item">
+                    🕐 {{ rec.time }} <span style="color:#44ff44">{% if rec.change >= 0 %}+{% endif %}{{ rec.change }}</span> → {{ rec.description }} <span style="float:right">💰 {{ rec.total }}</span>
+                </div>
+            {% else %}
+                <div>✨ 暂无记录</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="admin-link"><a href="/admin/login">🛠️ 管理后台</a></div>
+</div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+[
+    {
+        "id": 1,
+        "name": "🍬 小零食一份",
+        "price": 15,
+        "icon": "🍬",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "小零食奖励"
+    },
+    {
+        "id": 2,
+        "name": "🎮 玩蛋仔派对15分钟",
+        "price": 40,
+        "icon": "🎮",
+        "type": "weekend_only",
+        "weekly_limit": 2,
+        "description": "只能在周末使用"
+    },
+    {
+        "id": 3,
+        "name": "🎮 玩蛋仔派对30分钟",
+        "price": 70,
+        "icon": "🎮",
+        "type": "weekend_only",
+        "weekly_limit": 2,
+        "description": "只能在周末使用"
+    },
+    {
+        "id": 4,
+        "name": "🧸 玩具一份",
+        "price": 200,
+        "icon": "🧸",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "实物奖励"
+    },
+    {
+        "id": 5,
+        "name": "🍦 吃冰淇淋",
+        "price": 25,
+        "icon": "🍦",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "周末享用"
+    },
+    {
+        "id": 6,
+        "name": "⭐ 免做一次任务卡",
+        "price": 150,
+        "icon": "⭐",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "可免做一次任务"
+    },
+    {
+        "id": 7,
+        "name": "🎬 全家一起看电影",
+        "price": 300,
+        "icon": "🎬",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "家庭观影时间"
+    },
+    {
+        "id": 8,
+        "name": "📺 多看15分钟动画",
+        "price": 35,
+        "icon": "📺",
+        "type": "weekend_only",
+        "weekly_limit": 2,
+        "description": "只能在周末使用"
+    },
+    {
+        "id": 9,
+        "name": "🛏️ 周末晚起30分钟",
+        "price": 15,
+        "icon": "🛏️",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "周末可以晚起"
+    },
+    {
+        "id": 10,
+        "name": "🍎 决定今晚吃什么水果",
+        "price": 15,
+        "icon": "🍎",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "小决策权"
+    },
+    {
+        "id": 11,
+        "name": "🎲 爸爸陪玩桌游15分钟",
+        "price": 35,
+        "icon": "🎲",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "亲子时间"
+    },
+    {
+        "id": 12,
+        "name": "🎁 神秘盲盒（实物）",
+        "price": 350,
+        "icon": "🎁",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "随机小玩具"
+    }
+]
