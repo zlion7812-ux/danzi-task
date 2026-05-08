@@ -120,3 +120,44 @@ def calculate_reading_reward(minutes):
         reward_desc += f"，基础{base_points}分 + 超额{extra_points}分"
 
     return base_points, extra_points, total, reward_desc
+
+
+# ========== 运动任务相关 ==========
+
+def calculate_sport_reward(minutes):
+    """
+    计算运动的积分奖励
+    参数: minutes - 运动分钟数
+    返回: (总积分, 积分描述)
+    """
+    if minutes < 10:
+        return 0, f"运动时长不足10分钟（{minutes}分钟），无法完成"
+
+    # 限制最多30分钟
+    if minutes > 30:
+        minutes = 30
+        extra_note = "（超过30分钟按30分钟计算）"
+    else:
+        extra_note = ""
+
+    # 计算积分：基础10分钟3分，之后每10分钟+2分
+    if minutes >= 30:
+        total = 7  # 3+2+2
+    elif minutes >= 20:
+        total = 5  # 3+2
+    else:
+        total = 3  # 3
+
+    return total, f"运动{minutes}分钟{extra_note}，获得{total}积分"
+
+
+def can_start_sport():
+    """
+    检查当前时间是否在 20:50 之前
+    返回: (是否允许开始, 提示信息)
+    """
+    now = datetime.now()
+    deadline = now.replace(hour=20, minute=50, second=0, microsecond=0)
+    if now > deadline:
+        return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
+    return True, ""

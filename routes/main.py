@@ -16,13 +16,25 @@ def register_main_routes(app):
         enabled_tasks = [t for t in tasks if t.get('enabled', True)]
         defeated = state.get('defeated_monsters', [])
 
-        all_defeated = len(defeated) == len(enabled_tasks) and len(enabled_tasks) > 0
+        # ========== 传送门条件：完成 80% 的任务即可 ==========
+        required_percent = 0.8
+        required_count = int(len(enabled_tasks) * required_percent)
+        if required_count < 1 and len(enabled_tasks) > 0:
+            required_count = 1
+        all_defeated = len(defeated) >= required_count and len(enabled_tasks) > 0
+        # ===================================================
+
         bonus_active = (state.get('bonus_quests') and len(state.get('bonus_quests', [])) > 0)
+
+        # 构建怪物 ID 到怪物信息的映射字典（提高匹配效率）
+        monster_map = {m['id']: m for m in monsters}
 
         task_list = []
         for task in enabled_tasks:
-            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            # 使用映射字典快速查找怪物
+            monster = monster_map.get(task['monster_id'])
             desc = task_details.get(task['name'], task.get('description', ''))
+
             if monster:
                 task_list.append({
                     'id': task['id'],
@@ -33,6 +45,7 @@ def register_main_routes(app):
                     'monster_name': monster['name']
                 })
             else:
+                # 如果找不到怪物，使用默认问号图标
                 task_list.append({
                     'id': task['id'],
                     'name': task['name'],

@@ -26,11 +26,11 @@
 
     <div id="tab-quest" class="tab-content active">
         <div class="map-area">
-            <!-- 第一行：普通任务 -->
+            <!-- 第一行：普通任务（起床、作业、物品归位） -->
             <div class="task-row">
                 <div class="row-title">⚔️ 每日讨伐 ⚔️</div>
                 {% for task in tasks %}
-                    {% if "复习" not in task.name and "阅读" not in task.name %}
+                    {% if "复习" not in task.name and "阅读" not in task.name and "运动" not in task.name %}
                         <div class="monster-card {% if task.id in defeated_ids %}defeated{% endif %}" onclick="fightMonster('{{ task.id }}')">
                             <div class="card-top">
                                 <div class="monster-icon">{{ task.icon }}</div>
@@ -49,11 +49,11 @@
             <!-- 分隔线 -->
             <div class="separator" style="height:2px; background:linear-gradient(90deg, transparent, #e6b422, transparent); margin:20px 0 16px 0;"></div>
 
-            <!-- 第二行：计时任务 -->
+            <!-- 第二行：计时任务（复习、阅读、运动） -->
             <div class="task-row">
                 <div class="row-title">📚 修行之路 📚</div>
                 {% for task in tasks %}
-                    {% if "复习" in task.name or "阅读" in task.name %}
+                    {% if "复习" in task.name or "阅读" in task.name or "运动" in task.name %}
                         <div class="monster-card no-click {% if task.id in defeated_ids %}defeated{% endif %}" id="card-{{ task.id }}">
                             <div class="card-top">
                                 <div class="monster-icon">{{ task.icon }}</div>
@@ -92,7 +92,7 @@
                 {% elif all_defeated and portal_used %}
                     <div>🌟 今日传送门已探索，明日再临 🌟</div>
                 {% else %}
-                    <div style="opacity:0.5">🔒 讨伐全部恶兽，传送门才会出现 🔒</div>
+                    <div style="opacity:0.5">🔒 完成大部分任务，传送门才会出现 🔒</div>
                 {% endif %}
             </div>
         </div>
@@ -102,7 +102,7 @@
     </div>
 
     <div id="tab-shop" class="tab-content">
-        <div class="loot-box">💰 当前勇者积分: <strong>{{ user_points }}</strong></div>
+        <div class="loot-box">💰 当前积分: <strong>{{ user_points }}</strong></div>
         {% for item in shop_items %}
             <div class="shop-item">
                 <div><span style="font-size:1.4rem">{{ item.icon }}</span> {{ item.name }}<br><span style="color:#ffaa44">{{ item.price }}积分</span></div>

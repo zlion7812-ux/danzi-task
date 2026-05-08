@@ -43,5 +43,14 @@
         "points": 3,
         "enabled": true,
         "order": 5
+    },
+    {
+        "id": "task_6",
+        "monster_id": "mon_13",
+        "name": "运动健身",
+        "description": "💪 活力运动！\n\n• 20:50 前开始运动\n• 最少运动10分钟\n• 10分钟=3分，20分钟=5分，30分钟=7分\n• 当天最多30分钟",
+        "points": 3,
+        "enabled": true,
+        "order": 6
     }
 ]

@@ -1,12 +1,13 @@
 from flask import request, jsonify, session
 from datetime import datetime
+import random
 from utils.data import get_tasks, get_monsters, get_child_state, update_child_state, add_points_record
 from utils.game import get_task_rank, TASK_RANKS, get_random_points_with_crit, get_random_loot, check_time_limit, \
-    calculate_reading_reward
+    calculate_reading_reward, calculate_sport_reward, can_start_sport
 
 
 def register_fight_routes(app):
-    # ========== 复习/阅读：开始计时 ==========
+    # ========== 复习/阅读/运动：开始计时 ==========
     @app.route('/start_timer', methods=['POST'])
     def start_timer():
         data = request.get_json()
@@ -26,6 +27,12 @@ def register_fight_routes(app):
         if not can_complete:
             return jsonify({'error': time_msg})
 
+        # 运动任务：检查时间限制（20:50前）
+        if "运动" in task_name:
+            can_start, sport_msg = can_start_sport()
+            if not can_start:
+                return jsonify({'error': sport_msg})
+
         state['active_timer'] = {
             'task_id': task_id,
             'task_name': task_name,
@@ -38,7 +45,7 @@ def register_fight_routes(app):
             'message': f'⏰ 开始{task_name}！加油～'
         })
 
-    # ========== 复习/阅读：结束计时 ==========
+    # ========== 复习/阅读/运动：结束计时 ==========
     @app.route('/end_timer', methods=['POST'])
     def end_timer():
         data = request.get_json()
@@ -58,7 +65,7 @@ def register_fight_routes(app):
         end_time = datetime.now()
         minutes = int((end_time - start_time).total_seconds() / 60)
 
-        if minutes < 15:
+        if minutes < 15 and "运动" not in task_name:
             return jsonify({'error': f'时长不足15分钟（当前{minutes}分钟），请继续学习！'})
 
         tasks = get_tasks()
@@ -72,25 +79,42 @@ def register_fight_routes(app):
             update_child_state(child_id, state)
             return jsonify({'error': '这个任务已经完成过了'})
 
-        base_points, extra_points, total_points, reward_desc = calculate_reading_reward(minutes)
-
-        import random
-        is_crit = random.random() < 0.2
-        if is_crit:
-            total_points = total_points * 2
-            crit_text = " 💥暴击！💥"
+        # ========== 运动任务：特殊积分计算 ==========
+        if "运动" in task['name']:
+            total_points, reward_desc = calculate_sport_reward(minutes)
+            if total_points == 0:
+                return jsonify({'error': reward_desc})
+            is_crit = random.random() < 0.2
+            if is_crit:
+                total_points = total_points * 2
+                crit_text = " 💥暴击！💥"
+            else:
+                crit_text = ""
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, state, '魔法掉落', loot['add_points'], f'{loot["name"]}')
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
         else:
-            crit_text = ""
+            # 复习/阅读：原有积分计算
+            base_points, extra_points, total_points, reward_desc = calculate_reading_reward(minutes)
+            is_crit = random.random() < 0.2
+            if is_crit:
+                total_points = total_points * 2
+                crit_text = " 💥暴击！💥"
+            else:
+                crit_text = ""
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, state, '魔法掉落', loot['add_points'], f'{loot["name"]}')
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
 
         state['points'] += total_points
         add_points_record(child_id, state, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}')
-
-        loot = get_random_loot()
-        loot_text = ""
-        if loot['add_points'] > 0:
-            state['points'] += loot['add_points']
-            add_points_record(child_id, state, '魔法掉落', loot['add_points'], f'{loot["name"]}')
-            loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
 
         state.setdefault('defeated_monsters', []).append(timer['task_id'])
         state['active_timer'] = None
@@ -104,7 +128,7 @@ def register_fight_routes(app):
 
         return jsonify({
             'status': 'ok',
-            'message': f'🎉 {task["name"]}完成！学习了{minutes}分钟，获得{total_points}金币{crit_text}{loot_text}',
+            'message': f'🎉 {task["name"]}完成！{reward_desc}{crit_text}{loot_text}',
             'monster_name': monster_name,
             'points_earned': total_points,
             'minutes': minutes,
@@ -133,7 +157,7 @@ def register_fight_routes(app):
             return jsonify({'error': f'任务不存在: {task_id}'})
 
         # 时间限制检查（只对作业、物品归位生效，起床不再限制）
-        if "起床" not in task['name']:
+        if "起床" not in task['name'] and "运动" not in task['name']:
             can_complete, time_msg = check_time_limit(task['name'])
             if not can_complete:
                 return jsonify({'error': time_msg})
@@ -184,7 +208,7 @@ def register_fight_routes(app):
             update_child_state(child_id, state)
 
             return jsonify({
-                'message': f'讨伐成功！{message_suffix}{loot_text}',
+                'message': f'{message_suffix}{loot_text}',
                 'monster_name': monster_name,
                 'base_points': points_earned,
                 'is_crit': is_crit,
@@ -233,8 +257,18 @@ def register_fight_routes(app):
         state = get_child_state(child_id)
         tasks = get_tasks()
         enabled_tasks = [t for t in tasks if t.get('enabled', True)]
-        if len(state.get('defeated_monsters', [])) != len(enabled_tasks):
-            return jsonify({'error': '必须讨伐全部怪物才能开启传送门'})
+
+        # ========== 传送门条件：完成 80% 的任务即可 ==========
+        required_percent = 0.8
+        required_count = int(len(enabled_tasks) * required_percent)
+        if required_count < 1 and len(enabled_tasks) > 0:
+            required_count = 1
+
+        if len(state.get('defeated_monsters', [])) < required_count:
+            return jsonify(
+                {'error': f'需要完成至少 {required_count} 个任务才能开启传送门（共{len(enabled_tasks)}个任务）'})
+        # ===================================================
+
         if state.get('portal_used', False):
             return jsonify({'error': '传送门今日已经开启过了'})
         state['portal_used'] = True

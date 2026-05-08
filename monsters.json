@@ -82,5 +82,13 @@
         "icon": "🔥",
         "default_points": 4,
         "description": "烈焰领主，终极BOSS"
+    },
+    {
+        "id": "mon_13",
+        "name": "肌肉兽",
+        "icon": "💪",
+        "default_points": 3,
+        "description": "懒惰的克星，爱运动的守护者"
     }
+
 ]
