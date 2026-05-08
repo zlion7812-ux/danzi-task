@@ -21,4 +21,7 @@ if __name__ == '__main__':
     print("   管理后台: http://127.0.0.1:5001/admin/login")
     print("   初始密码: admin123")
     print("=" * 50)
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    import os
+
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host='0.0.0.0', port=port, debug=False)  # 生产环境关闭 debug
