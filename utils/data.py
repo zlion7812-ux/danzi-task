@@ -99,11 +99,14 @@ def get_child_state(session_child_id):
     saved = load_child_data()
     if saved and saved.get('child_id') == child_id:
         state = saved['state']
+        # 跨日重置
         if state.get('last_date') != today:
-            from .game import calculate_streak
+            print(f"跨日重置: 上次日期={state.get('last_date')}, 今天={today}")  # 调试日志
+
             config = get_config()
             streak_rule = config.get('streak_rule', 'login')
 
+            # 计算昨天的任务完成情况（用于严格模式）
             yesterday_completed_all = False
             if streak_rule == 'clear_all' and state.get('last_date'):
                 tasks = get_tasks()
@@ -117,10 +120,12 @@ def get_child_state(session_child_id):
             if last_date and last_date.weekday() > today_dt.weekday():
                 state['weekly_exchanges'] = {}
 
+            # ========== 重置当日任务进度 ==========
             state['defeated_monsters'] = []
             state['portal_used'] = False
             state['bonus_quests'] = []
             state['treasure_taken_today'] = False
+            # ====================================
 
             # 计算连胜
             if state.get('last_date'):
@@ -143,6 +148,7 @@ def get_child_state(session_child_id):
             save_child_data({'child_id': child_id, 'state': state})
         return state
     else:
+        # 新用户
         state = {
             'points': 0,
             'last_date': today,
