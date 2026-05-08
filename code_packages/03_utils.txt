@@ -1,0 +1,603 @@
+=========================================
+=== FILE: utils/__init__.py ===
+=========================================
+
+
+
+=========================================
+=== FILE: utils/auth.py ===
+=========================================
+from functools import wraps
+from flask import session, redirect, url_for
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+=========================================
+=== FILE: utils/data.py ===
+=========================================
+import sqlite3
+import json
+import os
+from datetime import date, datetime
+
+# ========== JSON 配置文件读取（保持不变）==========
+CONFIG_FILE = 'config.json'
+MONSTERS_FILE = 'monsters.json'
+TASKS_FILE = 'tasks.json'
+SHOP_ITEMS_FILE = 'shop_items.json'
+LOOT_TABLE_FILE = 'loot_table.json'
+BONUS_QUESTS_FILE = 'bonus_quests.json'
+TASK_DETAILS_FILE = 'task_details.json'
+
+
+def load_json(file_path, default=None):
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return default if default is not None else []
+    return default if default is not None else []
+
+
+def save_json(file_path, data):
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def get_monsters():
+    return load_json(MONSTERS_FILE, [])
+
+
+def get_tasks():
+    tasks = load_json(TASKS_FILE, [])
+    for task in tasks:
+        if 'enabled' not in task:
+            task['enabled'] = True
+        if 'order' not in task:
+            task['order'] = 999
+    return sorted(tasks, key=lambda x: x.get('order', 999))
+
+
+def save_tasks(tasks):
+    save_json(TASKS_FILE, tasks)
+
+
+def save_monsters(monsters):
+    save_json(MONSTERS_FILE, monsters)
+
+
+def get_config():
+    default = {'admin_password': 'admin123', 'streak_rule': 'login', 'version': '1.0'}
+    config = load_json(CONFIG_FILE, default)
+    if 'streak_rule' not in config:
+        config['streak_rule'] = 'login'
+    return config
+
+
+def save_config(config):
+    save_json(CONFIG_FILE, config)
+
+
+def get_shop_items():
+    return load_json(SHOP_ITEMS_FILE, [])
+
+
+def get_loot_table():
+    return load_json(LOOT_TABLE_FILE, [])
+
+
+def get_bonus_quests_pool():
+    return load_json(BONUS_QUESTS_FILE, [])
+
+
+def get_task_details():
+    return load_json(TASK_DETAILS_FILE, {})
+
+
+# ========== SQLite 数据库操作 ==========
+DB_FILE = 'danzi_data.db'
+
+
+def init_db():
+    """初始化数据库，创建所有表"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            child_id TEXT PRIMARY KEY,
+            points INTEGER DEFAULT 0,
+            streak INTEGER DEFAULT 1,
+            last_date TEXT,
+            portal_used INTEGER DEFAULT 0,
+            treasure_taken_today INTEGER DEFAULT 0
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS daily_completed (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            child_id TEXT,
+            task_id TEXT,
+            date TEXT,
+            UNIQUE(child_id, task_id, date)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS points_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            child_id TEXT,
+            time TEXT,
+            source TEXT,
+            change INTEGER,
+            description TEXT,
+            total INTEGER
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS exchange_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            child_id TEXT,
+            time TEXT,
+            item_name TEXT,
+            price INTEGER
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS weekly_exchanges (
+            child_id TEXT,
+            key TEXT,
+            count INTEGER,
+            PRIMARY KEY (child_id, key)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bonus_quests (
+            child_id TEXT,
+            date TEXT,
+            quest_data TEXT,
+            PRIMARY KEY (child_id, date)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS active_timer (
+            child_id TEXT PRIMARY KEY,
+            task_id TEXT,
+            task_name TEXT,
+            start_time TEXT
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+
+def get_connection():
+    return sqlite3.connect(DB_FILE)
+
+
+def get_user_state(child_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM users WHERE child_id = ?', (child_id,))
+    user = cursor.fetchone()
+
+    if not user:
+        today = str(date.today())
+        cursor.execute('''
+            INSERT INTO users (child_id, points, streak, last_date, portal_used, treasure_taken_today)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (child_id, 0, 1, today, 0, 0))
+        conn.commit()
+        conn.close()
+        return {
+            'points': 0,
+            'streak': 1,
+            'last_date': today,
+            'portal_used': False,
+            'treasure_taken_today': False
+        }
+
+    state = {
+        'points': user[1],
+        'streak': user[2],
+        'last_date': user[3],
+        'portal_used': bool(user[4]),
+        'treasure_taken_today': bool(user[5])
+    }
+    conn.close()
+    return state
+
+
+def update_user_state(child_id, state):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE users 
+        SET points = ?, streak = ?, last_date = ?, portal_used = ?, treasure_taken_today = ?
+        WHERE child_id = ?
+    ''', (state['points'], state['streak'], state['last_date'],
+          int(state.get('portal_used', False)),
+          int(state.get('treasure_taken_today', False)), child_id))
+    conn.commit()
+    conn.close()
+
+
+def get_defeated_monsters(child_id, date_str=None):
+    if date_str is None:
+        date_str = str(date.today())
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT task_id FROM daily_completed 
+        WHERE child_id = ? AND date = ?
+    ''', (child_id, date_str))
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
+
+def add_defeated_monster(child_id, task_id, date_str=None):
+    if date_str is None:
+        date_str = str(date.today())
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO daily_completed (child_id, task_id, date)
+            VALUES (?, ?, ?)
+        ''', (child_id, task_id, date_str))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        pass
+    conn.close()
+
+
+def clear_defeated_monsters(child_id, date_str=None):
+    if date_str is None:
+        date_str = str(date.today())
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM daily_completed WHERE child_id = ? AND date = ?', (child_id, date_str))
+    conn.commit()
+    conn.close()
+
+
+def add_points_record(child_id, source, change, description, total):
+    """添加积分记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO points_history (child_id, time, source, change, description, total)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (child_id, datetime.now().strftime('%m-%d %H:%M'), source, change, description, total))
+    conn.commit()
+    conn.close()
+
+
+def get_points_history(child_id, limit=50):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT time, source, change, description, total 
+        FROM points_history 
+        WHERE child_id = ? 
+        ORDER BY id DESC 
+        LIMIT ?
+    ''', (child_id, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{'time': r[0], 'source': r[1], 'change': r[2], 'description': r[3], 'total': r[4]} for r in rows]
+
+
+def add_exchange_record(child_id, item_name, price):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO exchange_history (child_id, time, item_name, price)
+        VALUES (?, ?, ?, ?)
+    ''', (child_id, datetime.now().strftime('%H:%M'), item_name, price))
+    conn.commit()
+    conn.close()
+
+
+def get_exchange_history(child_id, limit=20):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT time, item_name, price 
+        FROM exchange_history 
+        WHERE child_id = ? 
+        ORDER BY id DESC 
+        LIMIT ?
+    ''', (child_id, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{'time': r[0], 'item_name': r[1], 'price': r[2]} for r in rows]
+
+
+def get_weekly_exchange_count(child_id, key):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT count FROM weekly_exchanges WHERE child_id = ? AND key = ?', (child_id, key))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+
+def increment_weekly_exchange(child_id, key):
+    conn = get_connection()
+    cursor = conn.cursor()
+    current = get_weekly_exchange_count(child_id, key)
+    if current == 0:
+        cursor.execute('INSERT INTO weekly_exchanges (child_id, key, count) VALUES (?, ?, ?)', (child_id, key, 1))
+    else:
+        cursor.execute('UPDATE weekly_exchanges SET count = ? WHERE child_id = ? AND key = ?',
+                       (current + 1, child_id, key))
+    conn.commit()
+    conn.close()
+
+
+def clear_weekly_exchanges(child_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM weekly_exchanges WHERE child_id = ?', (child_id,))
+    conn.commit()
+    conn.close()
+
+
+def save_bonus_quests(child_id, date_str, quests):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO bonus_quests (child_id, date, quest_data)
+        VALUES (?, ?, ?)
+    ''', (child_id, date_str, json.dumps(quests, ensure_ascii=False)))
+    conn.commit()
+    conn.close()
+
+
+def get_bonus_quests(child_id, date_str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT quest_data FROM bonus_quests WHERE child_id = ? AND date = ?', (child_id, date_str))
+    row = cursor.fetchone()
+    conn.close()
+    return json.loads(row[0]) if row else None
+
+
+def save_active_timer(child_id, task_id, task_name, start_time):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO active_timer (child_id, task_id, task_name, start_time)
+        VALUES (?, ?, ?, ?)
+    ''', (child_id, task_id, task_name, start_time))
+    conn.commit()
+    conn.close()
+
+
+def get_active_timer(child_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT task_id, task_name, start_time FROM active_timer WHERE child_id = ?', (child_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {'task_id': row[0], 'task_name': row[1], 'start_time': row[2]}
+    return None
+
+
+def clear_active_timer(child_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM active_timer WHERE child_id = ?', (child_id,))
+    conn.commit()
+    conn.close()
+
+
+# ========== 兼容旧接口 ==========
+def get_child_state(child_id):
+    """兼容旧代码的接口"""
+    state = get_user_state(child_id)
+    state['defeated_monsters'] = get_defeated_monsters(child_id)
+    state['exchange_history'] = get_exchange_history(child_id)
+    state['points_history'] = get_points_history(child_id)
+    state['bonus_quests'] = get_bonus_quests(child_id, state['last_date'])
+    state['active_timer'] = get_active_timer(child_id)
+    state['weekly_exchanges'] = {}
+    return state
+
+
+def update_child_state(child_id, state):
+    """兼容旧代码的接口"""
+    update_user_state(child_id, state)
+    # 注意：其他表的数据需要单独调用对应函数更新
+
+
+# 初始化数据库
+init_db()
+
+
+=========================================
+=== FILE: utils/game.py ===
+=========================================
+import random
+from datetime import datetime
+from utils.data import get_loot_table, get_bonus_quests_pool
+
+# 任务等级配置
+TASK_RANKS = {
+    'easy': {'range': (1, 4), 'tasks': ['起床', '物品归位', '晨间勇者']},
+    'medium': {'range': (2, 6), 'tasks': ['阅读', '复习', '阅读冒险', '知识复习']},
+    'hard': {'range': (3, 8), 'tasks': ['作业', '作业讨伐']}
+}
+
+
+def get_random_points_with_crit(base_min, base_max, crit_chance=0.2):
+    """获取随机积分，20%概率暴击翻倍"""
+    points = random.randint(base_min, base_max)
+    is_crit = random.random() < crit_chance
+    if is_crit:
+        points = points * 2
+    return points, is_crit
+
+
+def get_task_rank(task_name):
+    """根据任务名称判断难度等级"""
+    for rank, info in TASK_RANKS.items():
+        for keyword in info['tasks']:
+            if keyword in task_name:
+                return rank
+    return 'medium'
+
+
+def get_random_loot():
+    """获取随机掉落道具"""
+    loot_table = get_loot_table()
+    pool = []
+    for item in loot_table:
+        name = item['name']
+        add_points = item['add_points']
+        weight = item['weight']
+        effect = item['effect']
+        for _ in range(weight):
+            pool.append((name, add_points, effect))
+    chosen = random.choice(pool)
+    return {'name': chosen[0], 'add_points': chosen[1], 'effect': chosen[2]}
+
+
+def generate_bonus_quests():
+    """生成随机彩蛋任务"""
+    bonus_pool = get_bonus_quests_pool()
+    count = random.randint(2, 4)
+    selected = random.sample(bonus_pool, min(count, len(bonus_pool)))
+    return [{
+        'name': q['name'],
+        'desc': q['desc'],
+        'points_range': q['points_range'],
+        'completed': False,
+        'id': q['id']
+    } for q in selected]
+
+
+def is_weekend():
+    """判断今天是否是周末"""
+    today = datetime.today().weekday()
+    return today >= 5  # 5=周六, 6=周日
+
+
+def check_time_limit(task_name):
+    """
+    检查任务的时间限制
+    返回: (是否允许完成, 提示信息)
+    """
+    now = datetime.now()
+    current_hour = now.hour
+    current_minute = now.minute
+    current_time = current_hour * 60 + current_minute
+
+    # 起床：7:15前（7*60+15 = 435）
+    if "起床" in task_name:
+        if current_time > 435:
+            return False, "⏰ 起床任务需要在7:15前完成！明天请早点起～"
+        return True, ""
+
+    # 作业：19:30前（19*60+30 = 1170）
+    elif "作业" in task_name:
+        if current_time > 1170:
+            return False, "⏰ 作业需要在19:30前完成！明天记得早点写作业～"
+        return True, ""
+
+    # 复习：无时间限制
+    elif "复习" in task_name:
+        return True, ""
+
+    # 阅读、物品归位无时间限制
+    else:
+        return True, ""
+
+
+# ========== 计时任务相关 ==========
+
+def calculate_reading_reward(minutes):
+    """
+    计算阅读/复习的积分奖励
+    返回: (基础分, 奖励分, 总积分, 奖励描述)
+    """
+    if minutes < 15:
+        return 0, 0, 0, "时长不足15分钟，无法完成"
+
+    # 基础积分 3-6分随机（中难度）
+    base_points = random.randint(3, 6)
+
+    # 超额奖励：超过30分钟后，每20分钟+3分
+    extra_points = 0
+    if minutes > 30:
+        extra_blocks = (minutes - 30) // 20
+        extra_points = extra_blocks * 3
+
+    total = base_points + extra_points
+
+    reward_desc = f"学习了{minutes}分钟"
+    if extra_points > 0:
+        reward_desc += f"，基础{base_points}分 + 超额{extra_points}分"
+
+    return base_points, extra_points, total, reward_desc
+
+
+# ========== 运动任务相关 ==========
+
+def calculate_sport_reward(minutes):
+    """
+    计算运动的积分奖励
+    参数: minutes - 运动分钟数
+    返回: (总积分, 积分描述)
+    """
+    if minutes < 10:
+        return 0, f"运动时长不足10分钟（{minutes}分钟），无法完成"
+
+    # 限制最多30分钟
+    if minutes > 30:
+        minutes = 30
+        extra_note = "（超过30分钟按30分钟计算）"
+    else:
+        extra_note = ""
+
+    # 计算积分：基础10分钟3分，之后每10分钟+2分
+    if minutes >= 30:
+        total = 7  # 3+2+2
+    elif minutes >= 20:
+        total = 5  # 3+2
+    else:
+        total = 3  # 3
+
+    return total, f"运动{minutes}分钟{extra_note}，获得{total}积分"
+
+
+def can_start_sport():
+    """
+    检查当前时间是否在 20:50 之前
+    返回: (是否允许开始, 提示信息)
+    """
+    now = datetime.now()
+    deadline = now.replace(hour=20, minute=50, second=0, microsecond=0)
+    if now > deadline:
+        return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
+    return True, ""
+
+

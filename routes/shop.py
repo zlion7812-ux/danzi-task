@@ -1,6 +1,7 @@
 from flask import request, jsonify, session
 from datetime import datetime
-from utils.data import get_child_state, update_child_state, add_points_record, get_shop_items
+from utils.data import get_child_state, update_child_state, add_points_record, get_shop_items, add_exchange_record, \
+    increment_weekly_exchange
 from utils.game import is_weekend
 
 
@@ -21,30 +22,37 @@ def register_shop_routes(app):
             return jsonify({'error': '这个道具只能在周末兑换！'})
 
         if item.get('weekly_limit'):
-            weekly_exchanges = state.get('weekly_exchanges', {})
             week_num = datetime.today().isocalendar()[1]
             key = f"{item_id}_{week_num}"
-            count = weekly_exchanges.get(key, 0)
+            count = state.get('weekly_exchanges', {}).get(key, 0)
             if count >= item['weekly_limit']:
                 return jsonify({'error': f'本周已兑换{item["weekly_limit"]}次，不能再兑换了！'})
 
         if state['points'] < item['price']:
             return jsonify({'error': f'积分不足，需要{item["price"]}积分'})
 
+        # 扣除积分
+        old_points = state['points']
         state['points'] -= item['price']
-        add_points_record(child_id, state, '兑换', -item['price'], f'兑换 {item["name"]}')
 
+        # 记录积分变动
+        add_points_record(child_id, '兑换', -item['price'], f'兑换 {item["name"]}', state['points'])
+
+        # 记录兑换历史
+        add_exchange_record(child_id, item['name'], item['price'])
+
+        # 更新周限购
         if item.get('weekly_limit'):
-            weekly_exchanges = state.get('weekly_exchanges', {})
             week_num = datetime.today().isocalendar()[1]
             key = f"{item_id}_{week_num}"
-            weekly_exchanges[key] = weekly_exchanges.get(key, 0) + 1
-            state['weekly_exchanges'] = weekly_exchanges
+            increment_weekly_exchange(child_id, key)
 
+        # 更新state中的exchange_history用于显示
         state.setdefault('exchange_history', []).insert(0, {
             'time': datetime.now().strftime('%H:%M'),
             'item_name': item['name'],
             'price': item['price']
         })
+
         update_child_state(child_id, state)
         return jsonify({'message': f'兑换 {item["name"]} 成功！剩余{state["points"]}积分'})

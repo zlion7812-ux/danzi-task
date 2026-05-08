@@ -1,7 +1,10 @@
 from flask import render_template, request, session, jsonify, redirect, url_for
 from utils.auth import login_required
-from utils.data import get_tasks, get_monsters, get_config, save_tasks, save_monsters, save_config, DATA_FILE
+from utils.data import get_tasks, get_monsters, get_config, save_tasks, save_monsters, save_config, reset_daily_tasks, update_streak
 import os
+import json
+
+DB_FILE = 'danzi_data.db'
 
 
 def register_admin_routes(app):
@@ -142,11 +145,29 @@ def register_admin_routes(app):
         session.pop('admin_logged_in', None)
         return redirect(url_for('index'))
 
-    # ========== 重置所有数据 ==========
+    @app.route('/admin/reset_child_day', methods=['POST'])
+    @login_required
+    def admin_reset_child_day():
+        """重置今日任务（不清除积分）"""
+        child_id = 'default_child'
+        reset_daily_tasks(child_id)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/reset_streak', methods=['POST'])
+    @login_required
+    def admin_reset_streak():
+        """重置连胜天数"""
+        child_id = 'default_child'
+        update_streak(child_id, 1)
+        return jsonify({'status': 'ok'})
+
     @app.route('/admin/reset_all_data', methods=['POST'])
     @login_required
     def admin_reset_all_data():
-        """重置所有孩子数据"""
-        if os.path.exists(DATA_FILE):
-            os.remove(DATA_FILE)
+        """重置所有数据"""
+        if os.path.exists(DB_FILE):
+            os.remove(DB_FILE)
+        # 重新初始化数据库
+        from utils.data import init_db
+        init_db()
         return jsonify({'status': 'ok'})

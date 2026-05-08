@@ -1,0 +1,725 @@
+=========================================
+=== FILE: routes/__init__.py ===
+=========================================
+
+
+
+=========================================
+=== FILE: routes/admin.py ===
+=========================================
+from flask import render_template, request, session, jsonify, redirect, url_for
+from utils.auth import login_required
+from utils.data import get_tasks, get_monsters, get_config, save_tasks, save_monsters, save_config, DB_FILE
+import os
+
+
+def register_admin_routes(app):
+    @app.route('/admin/login', methods=['GET', 'POST'])
+    def admin_login():
+        if request.method == 'POST':
+            password = request.form.get('password')
+            config = get_config()
+            if password == config.get('admin_password', 'admin123'):
+                session['admin_logged_in'] = True
+                return redirect(url_for('admin'))
+            else:
+                return '<h3>密码错误</h3><a href="/admin/login">重新登录</a>'
+        return '''
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="UTF-8"><title>管理员登录</title><style>body{background:#1a1a2e;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;} .card{background:#16213e;padding:30px;border-radius:20px;} input{padding:10px;margin:10px 0;width:100%;} button{background:#44aa44;padding:10px;border:none;color:white;width:100%;cursor:pointer;}</style></head>
+            <body><div class="card"><h2>🐉 管理员登录</h2><form method="post"><input type="password" name="password" placeholder="请输入密码" autofocus><button type="submit">登录</button></form></div></body>
+            </html>
+        '''
+
+    @app.route('/admin')
+    @login_required
+    def admin():
+        return render_template('admin.html')
+
+    @app.route('/admin/data')
+    @login_required
+    def admin_data():
+        tasks = get_tasks()
+        monsters = get_monsters()
+        config = get_config()
+        return jsonify({'tasks': tasks, 'monsters': monsters, 'config': config})
+
+    @app.route('/admin/update_config', methods=['POST'])
+    @login_required
+    def admin_update_config():
+        data = request.get_json()
+        config = get_config()
+        if 'streak_rule' in data:
+            config['streak_rule'] = data['streak_rule']
+        if 'admin_password' in data and data['admin_password']:
+            config['admin_password'] = data['admin_password']
+        save_config(config)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/add_task', methods=['POST'])
+    @login_required
+    def admin_add_task():
+        data = request.get_json()
+        tasks = get_tasks()
+        import uuid
+        new_id = f"task_{uuid.uuid4().hex[:8]}"
+        new_order = len(tasks) + 1
+        new_task = {
+            'id': new_id,
+            'monster_id': data['monster_id'],
+            'name': data['name'],
+            'description': data.get('description', ''),
+            'points': data['points'],
+            'enabled': True,
+            'order': new_order
+        }
+        tasks.append(new_task)
+        save_tasks(tasks)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/update_task', methods=['POST'])
+    @login_required
+    def admin_update_task():
+        data = request.get_json()
+        tasks = get_tasks()
+        for task in tasks:
+            if task['id'] == data['task_id']:
+                task['name'] = data['name']
+                task['description'] = data.get('description', '')
+                task['monster_id'] = data['monster_id']
+                task['points'] = data['points']
+                task['order'] = data.get('order', 0)
+                task['enabled'] = data.get('enabled', True)
+                break
+        save_tasks(tasks)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/delete_task', methods=['POST'])
+    @login_required
+    def admin_delete_task():
+        data = request.get_json()
+        tasks = get_tasks()
+        tasks = [t for t in tasks if t['id'] != data['task_id']]
+        save_tasks(tasks)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/add_monster', methods=['POST'])
+    @login_required
+    def admin_add_monster():
+        data = request.get_json()
+        monsters = get_monsters()
+        import uuid
+        new_id = f"mon_{uuid.uuid4().hex[:8]}"
+        new_monster = {
+            'id': new_id,
+            'name': data['name'],
+            'icon': data.get('icon', '👾'),
+            'default_points': data['default_points'],
+            'description': data.get('description', '')
+        }
+        monsters.append(new_monster)
+        save_monsters(monsters)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/update_monster', methods=['POST'])
+    @login_required
+    def admin_update_monster():
+        data = request.get_json()
+        monsters = get_monsters()
+        for monster in monsters:
+            if monster['id'] == data['monster_id']:
+                monster['name'] = data['name']
+                monster['icon'] = data.get('icon', '👾')
+                monster['default_points'] = data['default_points']
+                monster['description'] = data.get('description', '')
+                break
+        save_monsters(monsters)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/delete_monster', methods=['POST'])
+    @login_required
+    def admin_delete_monster():
+        data = request.get_json()
+        monsters = get_monsters()
+        monsters_to_save = [m for m in monsters if m['id'] != data['monster_id']]
+        save_monsters(monsters_to_save)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/logout')
+    def logout():
+        session.pop('admin_logged_in', None)
+        return redirect(url_for('index'))
+
+    # ========== 重置所有数据 ==========
+    @app.route('/admin/reset_all_data', methods=['POST'])
+    @login_required
+    def admin_reset_all_data():
+        """重置所有孩子数据"""
+        if os.path.exists(DB_FILE):
+            os.remove(DB_FILE)
+        # 重新初始化数据库
+        from utils.data import init_db
+        init_db()
+        return jsonify({'status': 'ok'})
+
+
+=========================================
+=== FILE: routes/fight.py ===
+=========================================
+from flask import request, jsonify, session
+from datetime import datetime
+import random
+from utils.data import get_tasks, get_monsters, get_child_state, update_child_state, add_points_record
+from utils.game import get_task_rank, TASK_RANKS, get_random_points_with_crit, get_random_loot, check_time_limit, \
+    calculate_reading_reward, calculate_sport_reward, can_start_sport
+
+
+def register_fight_routes(app):
+    # ========== 复习/阅读/运动：开始计时 ==========
+    @app.route('/start_timer', methods=['POST'])
+    def start_timer():
+        data = request.get_json()
+        task_id = data.get('task_id')
+        task_name = data.get('task_name')
+
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+
+        if state.get('active_timer'):
+            return jsonify({'error': '已有进行中的任务，请先结束当前任务'})
+
+        if task_id in state.get('defeated_monsters', []):
+            return jsonify({'error': '这个任务今天已经完成过了'})
+
+        can_complete, time_msg = check_time_limit(task_name)
+        if not can_complete:
+            return jsonify({'error': time_msg})
+
+        # 运动任务：检查时间限制（20:50前）
+        if "运动" in task_name:
+            can_start, sport_msg = can_start_sport()
+            if not can_start:
+                return jsonify({'error': sport_msg})
+
+        state['active_timer'] = {
+            'task_id': task_id,
+            'task_name': task_name,
+            'start_time': datetime.now().isoformat()
+        }
+        update_child_state(child_id, state)
+
+        return jsonify({
+            'status': 'ok',
+            'message': f'⏰ 开始{task_name}！加油～'
+        })
+
+    # ========== 复习/阅读/运动：结束计时 ==========
+    @app.route('/end_timer', methods=['POST'])
+    def end_timer():
+        data = request.get_json()
+        task_name = data.get('task_name')
+
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+
+        if not state.get('active_timer'):
+            return jsonify({'error': '没有进行中的任务'})
+
+        timer = state['active_timer']
+        if timer['task_name'] != task_name:
+            return jsonify({'error': '任务名称不匹配'})
+
+        start_time = datetime.fromisoformat(timer['start_time'])
+        end_time = datetime.now()
+        minutes = int((end_time - start_time).total_seconds() / 60)
+
+        if minutes < 15 and "运动" not in task_name:
+            return jsonify({'error': f'时长不足15分钟（当前{minutes}分钟），请继续学习！'})
+
+        tasks = get_tasks()
+        monsters = get_monsters()
+        task = next((t for t in tasks if t['id'] == timer['task_id']), None)
+        if not task:
+            return jsonify({'error': '任务不存在'})
+
+        if timer['task_id'] in state.get('defeated_monsters', []):
+            state['active_timer'] = None
+            update_child_state(child_id, state)
+            return jsonify({'error': '这个任务已经完成过了'})
+
+        # ========== 运动任务：特殊积分计算 ==========
+        if "运动" in task['name']:
+            total_points, reward_desc = calculate_sport_reward(minutes)
+            if total_points == 0:
+                return jsonify({'error': reward_desc})
+            is_crit = random.random() < 0.2
+            if is_crit:
+                total_points = total_points * 2
+                crit_text = " 💥暴击！💥"
+            else:
+                crit_text = ""
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+        else:
+            # 复习/阅读：原有积分计算
+            base_points, extra_points, total_points, reward_desc = calculate_reading_reward(minutes)
+            is_crit = random.random() < 0.2
+            if is_crit:
+                total_points = total_points * 2
+                crit_text = " 💥暴击！💥"
+            else:
+                crit_text = ""
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+
+        state['points'] += total_points
+        add_points_record(child_id, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}', state['points'])
+
+        state.setdefault('defeated_monsters', []).append(timer['task_id'])
+        state['active_timer'] = None
+
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+        all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+        update_child_state(child_id, state)
+
+        monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+        monster_name = monster['name'] if monster else task['name']
+
+        return jsonify({
+            'status': 'ok',
+            'message': f'🎉 {task["name"]}完成！{reward_desc}{crit_text}{loot_text}',
+            'monster_name': monster_name,
+            'points_earned': total_points,
+            'minutes': minutes,
+            'is_crit': is_crit,
+            'loot_add': loot['add_points'],
+            'loot_effect': loot['effect'],
+            'all_defeated': all_defeated
+        })
+
+    # ========== 普通任务（起床、作业、物品归位） ==========
+    @app.route('/fight', methods=['POST'])
+    def fight():
+        try:
+            data = request.get_json()
+            task_id = data.get('task_id')
+            if not task_id:
+                return jsonify({'error': '任务ID不能为空'})
+
+            child_id = session.get('child_id', 'default_child')
+            state = get_child_state(child_id)
+            tasks = get_tasks()
+            monsters = get_monsters()
+            enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+
+            task = next((t for t in enabled_tasks if t['id'] == task_id), None)
+            if not task:
+                return jsonify({'error': f'任务不存在: {task_id}'})
+
+            # 时间限制检查
+            if "起床" not in task['name'] and "运动" not in task['name']:
+                can_complete, time_msg = check_time_limit(task['name'])
+                if not can_complete:
+                    return jsonify({'error': time_msg})
+
+            if task_id in state.get('defeated_monsters', []):
+                return jsonify({'error': '这只怪物已经讨伐过了！'})
+
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            monster_name = monster['name'] if monster else task['name']
+
+            # ========== 起床任务特殊处理 ==========
+            if "起床" in task['name']:
+                now = datetime.now()
+                morning_deadline = now.replace(hour=7, minute=15, second=0, microsecond=0)
+                is_early = now <= morning_deadline
+
+                if is_early:
+                    # 早起：随机 1-4 分 + 暴击
+                    rank = get_task_rank(task['name'])
+                    rank_range = TASK_RANKS[rank]['range']
+                    base_min, base_max = rank_range
+                    points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
+                    crit_text = " 💥暴击！💥" if is_crit else ""
+                    message_suffix = f"获得 {points_earned} 金币{crit_text}"
+                    add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]} (早起){crit_text}',
+                                      state['points'] + points_earned)
+                    state['points'] += points_earned
+
+                    # 随机掉落（早起才有）
+                    loot = get_random_loot()
+                    loot_text = ""
+                    if loot['add_points'] > 0:
+                        state['points'] += loot['add_points']
+                        add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                        loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+                else:
+                    # 迟到：固定 1 分，无暴击无掉落
+                    points_earned = 1
+                    is_crit = False
+                    crit_text = ""
+                    message_suffix = f"获得 {points_earned} 金币（迟到了，明天早点起哦）"
+                    add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]} (迟到)',
+                                      state['points'] + points_earned)
+                    state['points'] += points_earned
+                    loot_text = ""
+                    loot = {'add_points': 0, 'effect': '无掉落', 'name': '', 'cost_sanity': False}
+
+                state.setdefault('defeated_monsters', []).append(task_id)
+                all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+                update_child_state(child_id, state)
+
+                return jsonify({
+                    'message': f'{message_suffix}{loot_text}',
+                    'monster_name': monster_name,
+                    'base_points': points_earned,
+                    'is_crit': is_crit,
+                    'loot_add': loot.get('add_points', 0),
+                    'loot_effect': loot.get('effect', ''),
+                    'loot_name': loot.get('name', ''),
+                    'all_defeated': all_defeated,
+                    'points_earned': points_earned + loot.get('add_points', 0),
+                    'error': None
+                })
+
+            # ========== 其他普通任务（作业、物品归位） ==========
+            rank = get_task_rank(task['name'])
+            rank_range = TASK_RANKS[rank]['range']
+            base_min, base_max = rank_range
+            points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
+            crit_text = " 💥暴击！💥" if is_crit else ""
+
+            state['points'] += points_earned
+            add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]}{crit_text}', state['points'])
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+
+            state.setdefault('defeated_monsters', []).append(task_id)
+            all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+            update_child_state(child_id, state)
+
+            return jsonify({
+                'message': f'讨伐成功！获得 {points_earned} 金币{crit_text}{loot_text}',
+                'monster_name': monster_name,
+                'base_points': points_earned,
+                'is_crit': is_crit,
+                'loot_add': loot.get('add_points', 0),
+                'loot_effect': loot.get('effect', ''),
+                'loot_name': loot.get('name', ''),
+                'all_defeated': all_defeated,
+                'points_earned': points_earned + loot.get('add_points', 0),
+                'error': None
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)})
+
+    # ========== 传送门和彩蛋任务 ==========
+    @app.route('/portal', methods=['POST'])
+    def portal():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+
+        # ========== 传送门条件：完成 80% 的任务即可 ==========
+        required_percent = 0.8
+        required_count = int(len(enabled_tasks) * required_percent)
+        if required_count < 1 and len(enabled_tasks) > 0:
+            required_count = 1
+
+        if len(state.get('defeated_monsters', [])) < required_count:
+            return jsonify(
+                {'error': f'需要完成至少 {required_count} 个任务才能开启传送门（共{len(enabled_tasks)}个任务）'})
+        # ===================================================
+
+        if state.get('portal_used', False):
+            return jsonify({'error': '传送门今日已经开启过了'})
+        state['portal_used'] = True
+        from utils.game import generate_bonus_quests
+        state['bonus_quests'] = generate_bonus_quests()
+        update_child_state(child_id, state)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/complete_bonus', methods=['POST'])
+    def complete_bonus():
+        data = request.get_json()
+        idx = data['bonus_index']
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        bonus_list = state.get('bonus_quests', [])
+        if idx >= len(bonus_list):
+            return jsonify({'error': '任务不存在'})
+        quest = bonus_list[idx]
+        if quest.get('completed', False):
+            return jsonify({'error': '这个彩蛋任务已经完成过了'})
+
+        points_earned, is_crit = get_random_points_with_crit(1, 4)
+        state['points'] += points_earned
+        crit_text = " 💥暴击！💥" if is_crit else ""
+        add_points_record(child_id, '彩蛋', points_earned, f'完成: {quest["name"]}{crit_text}', state['points'])
+        quest['completed'] = True
+        state['bonus_quests'] = bonus_list
+        update_child_state(child_id, state)
+
+        loot = get_random_loot()
+        loot_text = ""
+        if loot['add_points'] > 0:
+            state['points'] += loot['add_points']
+            add_points_record(child_id, '彩蛋掉落', loot['add_points'], loot['name'], state['points'])
+            loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+            update_child_state(child_id, state)
+
+        return jsonify({
+            'quest_name': quest['name'],
+            'points': points_earned,
+            'is_crit': is_crit,
+            'loot_effect': f"获得 {points_earned} 金币{crit_text}{loot_text}"
+        })
+
+    @app.route('/treasure', methods=['POST'])
+    def treasure():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+        if len(state.get('defeated_monsters', [])) != len(enabled_tasks):
+            return jsonify({'error': '必须完成全部任务才能开启宝箱'})
+        if state.get('treasure_taken_today', False):
+            return jsonify({'error': '今天的宝箱已经开启过了'})
+
+        points_earned, is_crit = get_random_points_with_crit(5, 8)
+        state['points'] += points_earned
+        crit_text = " 💥暴击！💥" if is_crit else ""
+        add_points_record(child_id, '全清宝藏', points_earned, f'全清宝箱奖励{crit_text}', state['points'])
+        state['treasure_taken_today'] = True
+        update_child_state(child_id, state)
+
+        return jsonify({
+            'loot_info': f'🎉 全清宝箱奖励 🎉 +{points_earned}金币{crit_text}',
+            'reward_points': points_earned,
+            'is_crit': is_crit
+        })
+
+
+=========================================
+=== FILE: routes/main.py ===
+=========================================
+from flask import render_template, session, jsonify
+from utils.data import get_tasks, get_monsters, get_child_state, get_config, get_shop_items, get_task_details
+
+
+def register_main_routes(app):
+    @app.route('/')
+    def index():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        monsters = get_monsters()
+        config = get_config()
+        streak_rule = config.get('streak_rule', 'login')
+        task_details = get_task_details()
+
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+        defeated = state.get('defeated_monsters', [])
+
+        # ========== 传送门条件：完成 80% 的任务即可 ==========
+        required_percent = 0.8
+        required_count = int(len(enabled_tasks) * required_percent)
+        if required_count < 1 and len(enabled_tasks) > 0:
+            required_count = 1
+        all_defeated = len(defeated) >= required_count and len(enabled_tasks) > 0
+        # ===================================================
+
+        bonus_active = (state.get('bonus_quests') and len(state.get('bonus_quests', [])) > 0)
+
+        # 构建怪物 ID 到怪物信息的映射字典（提高匹配效率）
+        monster_map = {m['id']: m for m in monsters}
+
+        task_list = []
+        for task in enabled_tasks:
+            # 使用映射字典快速查找怪物
+            monster = monster_map.get(task['monster_id'])
+            desc = task_details.get(task['name'], task.get('description', ''))
+
+            if monster:
+                task_list.append({
+                    'id': task['id'],
+                    'name': task['name'],
+                    'description': desc,
+                    'points': task['points'],
+                    'icon': monster['icon'],
+                    'monster_name': monster['name']
+                })
+            else:
+                # 如果找不到怪物，使用默认问号图标
+                task_list.append({
+                    'id': task['id'],
+                    'name': task['name'],
+                    'description': desc,
+                    'points': task['points'],
+                    'icon': '❓',
+                    'monster_name': '未知怪物'
+                })
+
+        shop_items = get_shop_items()
+
+        rule_display = "🟢 宽松模式" if streak_rule == "login" else "🔴 严格模式"
+        rule_tip = "登录即涨连胜" if streak_rule == "login" else "必须全清才涨连胜"
+
+        return render_template('index.html',
+                               tasks=task_list,
+                               defeated_ids=defeated,
+                               all_defeated=all_defeated,
+                               portal_used=state.get('portal_used', False),
+                               bonus_active=bonus_active,
+                               bonus_quests=state.get('bonus_quests', []),
+                               user_points=state['points'],
+                               streak=state['streak'],
+                               shop_items=shop_items,
+                               exchange_history=state.get('exchange_history', [])[:20][::-1],
+                               points_history=state.get('points_history', [])[:30],
+                               rule_display=rule_display,
+                               rule_tip=rule_tip)
+
+    @app.route('/status')
+    def status():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        return {'points': state['points'], 'streak': state['streak']}
+
+    @app.route('/reset_day', methods=['POST'])
+    def reset_day():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        state['defeated_monsters'] = []
+        state['portal_used'] = False
+        state['bonus_quests'] = []
+        state['treasure_taken_today'] = False
+        from utils.data import update_child_state
+        update_child_state(child_id, state)
+        return {'status': 'ok'}
+
+    @app.route('/reset_streak', methods=['POST'])
+    def reset_streak():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        state['streak'] = 1
+        from utils.data import update_child_state
+        update_child_state(child_id, state)
+        return {'status': 'ok'}
+
+    @app.route('/tasks_list')
+    def tasks_list():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        monsters = get_monsters()
+        task_details = get_task_details()
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+        task_list = []
+        for task in enabled_tasks:
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            icon = monster['icon'] if monster else '❓'
+            task_list.append({
+                'id': task['id'],
+                'name': task['name'],
+                'icon': icon,
+            })
+        return jsonify({
+            'tasks': task_list,
+            'completed_ids': state.get('defeated_monsters', [])
+        })
+
+    @app.route('/shop')
+    def shop_page():
+        """商城页面"""
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        shop_items = get_shop_items()
+        return render_template('shop.html',
+                               user_points=state['points'],
+                               shop_items=shop_items)
+
+    @app.route('/points')
+    def points_page():
+        """积分记录页面"""
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        points_history = state.get('points_history', [])[:30]
+        return render_template('points.html',
+                               user_points=state['points'],
+                               points_history=points_history)
+
+
+=========================================
+=== FILE: routes/shop.py ===
+=========================================
+from flask import request, jsonify, session
+from datetime import datetime
+from utils.data import get_child_state, update_child_state, add_points_record, get_shop_items
+from utils.game import is_weekend
+
+
+def register_shop_routes(app):
+    @app.route('/buy', methods=['POST'])
+    def buy():
+        data = request.get_json()
+        item_id = data['item_id']
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+
+        shop_items = get_shop_items()
+        item = next((i for i in shop_items if i['id'] == item_id), None)
+        if not item:
+            return jsonify({'error': '商品不存在'})
+
+        if item.get('type') == 'weekend_only' and not is_weekend():
+            return jsonify({'error': '这个道具只能在周末兑换！'})
+
+        if item.get('weekly_limit'):
+            weekly_exchanges = state.get('weekly_exchanges', {})
+            week_num = datetime.today().isocalendar()[1]
+            key = f"{item_id}_{week_num}"
+            count = weekly_exchanges.get(key, 0)
+            if count >= item['weekly_limit']:
+                return jsonify({'error': f'本周已兑换{item["weekly_limit"]}次，不能再兑换了！'})
+
+        if state['points'] < item['price']:
+            return jsonify({'error': f'积分不足，需要{item["price"]}积分'})
+
+        state['points'] -= item['price']
+        add_points_record(child_id, state, '兑换', -item['price'], f'兑换 {item["name"]}')
+
+        if item.get('weekly_limit'):
+            weekly_exchanges = state.get('weekly_exchanges', {})
+            week_num = datetime.today().isocalendar()[1]
+            key = f"{item_id}_{week_num}"
+            weekly_exchanges[key] = weekly_exchanges.get(key, 0) + 1
+            state['weekly_exchanges'] = weekly_exchanges
+
+        state.setdefault('exchange_history', []).insert(0, {
+            'time': datetime.now().strftime('%H:%M'),
+            'item_name': item['name'],
+            'price': item['price']
+        })
+        update_child_state(child_id, state)
+        return jsonify({'message': f'兑换 {item["name"]} 成功！剩余{state["points"]}积分'})
+
+

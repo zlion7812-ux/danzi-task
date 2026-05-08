@@ -1,7 +1,8 @@
 from flask import request, jsonify, session
 from datetime import datetime
 import random
-from utils.data import get_tasks, get_monsters, get_child_state, update_child_state, add_points_record
+from utils.data import get_tasks, get_monsters, get_child_state, update_child_state, add_points_record, \
+    add_defeated_monster, save_bonus_quests
 from utils.game import get_task_rank, TASK_RANKS, get_random_points_with_crit, get_random_loot, check_time_limit, \
     calculate_reading_reward, calculate_sport_reward, can_start_sport
 
@@ -27,7 +28,6 @@ def register_fight_routes(app):
         if not can_complete:
             return jsonify({'error': time_msg})
 
-        # 运动任务：检查时间限制（20:50前）
         if "运动" in task_name:
             can_start, sport_msg = can_start_sport()
             if not can_start:
@@ -79,7 +79,6 @@ def register_fight_routes(app):
             update_child_state(child_id, state)
             return jsonify({'error': '这个任务已经完成过了'})
 
-        # ========== 运动任务：特殊积分计算 ==========
         if "运动" in task['name']:
             total_points, reward_desc = calculate_sport_reward(minutes)
             if total_points == 0:
@@ -90,14 +89,19 @@ def register_fight_routes(app):
                 crit_text = " 💥暴击！💥"
             else:
                 crit_text = ""
+
+            state['points'] += total_points
+            add_defeated_monster(child_id, timer['task_id'])
+            add_points_record(child_id, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}',
+                              state['points'])
+
             loot = get_random_loot()
             loot_text = ""
             if loot['add_points'] > 0:
                 state['points'] += loot['add_points']
-                add_points_record(child_id, state, '魔法掉落', loot['add_points'], f'{loot["name"]}')
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
                 loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
         else:
-            # 复习/阅读：原有积分计算
             base_points, extra_points, total_points, reward_desc = calculate_reading_reward(minutes)
             is_crit = random.random() < 0.2
             if is_crit:
@@ -106,17 +110,18 @@ def register_fight_routes(app):
             else:
                 crit_text = ""
 
+            state['points'] += total_points
+            add_defeated_monster(child_id, timer['task_id'])
+            add_points_record(child_id, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}',
+                              state['points'])
+
             loot = get_random_loot()
             loot_text = ""
             if loot['add_points'] > 0:
                 state['points'] += loot['add_points']
-                add_points_record(child_id, state, '魔法掉落', loot['add_points'], f'{loot["name"]}')
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
                 loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
 
-        state['points'] += total_points
-        add_points_record(child_id, state, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}')
-
-        state.setdefault('defeated_monsters', []).append(timer['task_id'])
         state['active_timer'] = None
 
         enabled_tasks = [t for t in tasks if t.get('enabled', True)]
@@ -141,114 +146,122 @@ def register_fight_routes(app):
     # ========== 普通任务（起床、作业、物品归位） ==========
     @app.route('/fight', methods=['POST'])
     def fight():
-        data = request.get_json()
-        task_id = data.get('task_id')
-        if not task_id:
-            return jsonify({'error': '任务ID不能为空'})
+        try:
+            data = request.get_json()
+            task_id = data.get('task_id')
+            if not task_id:
+                return jsonify({'error': '任务ID不能为空'})
 
-        child_id = session.get('child_id', 'default_child')
-        state = get_child_state(child_id)
-        tasks = get_tasks()
-        monsters = get_monsters()
-        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+            child_id = session.get('child_id', 'default_child')
+            state = get_child_state(child_id)
+            tasks = get_tasks()
+            monsters = get_monsters()
+            enabled_tasks = [t for t in tasks if t.get('enabled', True)]
 
-        task = next((t for t in enabled_tasks if t['id'] == task_id), None)
-        if not task:
-            return jsonify({'error': f'任务不存在: {task_id}'})
+            task = next((t for t in enabled_tasks if t['id'] == task_id), None)
+            if not task:
+                return jsonify({'error': f'任务不存在: {task_id}'})
 
-        # 时间限制检查（只对作业、物品归位生效，起床不再限制）
-        if "起床" not in task['name'] and "运动" not in task['name']:
-            can_complete, time_msg = check_time_limit(task['name'])
-            if not can_complete:
-                return jsonify({'error': time_msg})
+            if "起床" not in task['name'] and "运动" not in task['name']:
+                can_complete, time_msg = check_time_limit(task['name'])
+                if not can_complete:
+                    return jsonify({'error': time_msg})
 
-        if task_id in state.get('defeated_monsters', []):
-            return jsonify({'error': '这只怪物已经讨伐过了！'})
+            if task_id in state.get('defeated_monsters', []):
+                return jsonify({'error': '这只怪物已经讨伐过了！'})
 
-        monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
-        monster_name = monster['name'] if monster else task['name']
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            monster_name = monster['name'] if monster else task['name']
 
-        # ========== 起床任务特殊处理 ==========
-        if "起床" in task['name']:
-            now = datetime.now()
-            morning_deadline = now.replace(hour=7, minute=15, second=0, microsecond=0)
-            is_early = now <= morning_deadline
+            if "起床" in task['name']:
+                now = datetime.now()
+                morning_deadline = now.replace(hour=7, minute=15, second=0, microsecond=0)
+                is_early = now <= morning_deadline
 
-            if is_early:
-                # 早起：随机 1-4 分 + 暴击
-                rank = get_task_rank(task['name'])
-                rank_range = TASK_RANKS[rank]['range']
-                base_min, base_max = rank_range
-                points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
-                crit_text = " 💥暴击！💥" if is_crit else ""
-                message_suffix = f"获得 {points_earned} 金币{crit_text}"
-                add_points_record(child_id, state, '讨伐', points_earned, f'完成任务: {task["name"]} (早起){crit_text}')
-                state['points'] += points_earned
+                if is_early:
+                    rank = get_task_rank(task['name'])
+                    rank_range = TASK_RANKS[rank]['range']
+                    base_min, base_max = rank_range
+                    points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
+                    crit_text = " 💥暴击！💥" if is_crit else ""
+                    message_suffix = f"获得 {points_earned} 金币{crit_text}"
 
-                # 随机掉落（早起才有）
-                loot = get_random_loot()
-                loot_text = ""
-                if loot['add_points'] > 0:
-                    state['points'] += loot['add_points']
-                    add_points_record(child_id, state, '魔法掉落', loot['add_points'], f'{loot["name"]}')
-                    loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
-            else:
-                # 迟到：固定 1 分，无暴击无掉落
-                points_earned = 1
-                is_crit = False
-                crit_text = ""
-                message_suffix = f"获得 {points_earned} 金币（迟到了，明天早点起哦）"
-                add_points_record(child_id, state, '讨伐', points_earned, f'完成任务: {task["name"]} (迟到)')
-                state['points'] += points_earned
-                loot_text = ""
-                loot = {'add_points': 0, 'effect': '无掉落', 'name': ''}
+                    state['points'] += points_earned
+                    add_defeated_monster(child_id, task_id)
+                    add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]} (早起){crit_text}',
+                                      state['points'])
 
-            state.setdefault('defeated_monsters', []).append(task_id)
+                    loot = get_random_loot()
+                    loot_text = ""
+                    if loot['add_points'] > 0:
+                        state['points'] += loot['add_points']
+                        add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                        loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+                else:
+                    points_earned = 1
+                    is_crit = False
+                    crit_text = ""
+                    message_suffix = f"获得 {points_earned} 金币（迟到了，明天早点起哦）"
+
+                    state['points'] += points_earned
+                    add_defeated_monster(child_id, task_id)
+                    add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]} (迟到)',
+                                      state['points'])
+                    loot_text = ""
+                    loot = {'add_points': 0, 'effect': '无掉落', 'name': ''}
+
+                all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+                update_child_state(child_id, state)
+
+                return jsonify({
+                    'message': f'{message_suffix}{loot_text}',
+                    'monster_name': monster_name,
+                    'base_points': points_earned,
+                    'is_crit': is_crit,
+                    'loot_add': loot.get('add_points', 0),
+                    'loot_effect': loot.get('effect', ''),
+                    'loot_name': loot.get('name', ''),
+                    'all_defeated': all_defeated,
+                    'points_earned': points_earned + loot.get('add_points', 0),
+                    'error': None
+                })
+
+            rank = get_task_rank(task['name'])
+            rank_range = TASK_RANKS[rank]['range']
+            base_min, base_max = rank_range
+            points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
+            crit_text = " 💥暴击！💥" if is_crit else ""
+
+            state['points'] += points_earned
+            add_defeated_monster(child_id, task_id)
+            add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]}{crit_text}', state['points'])
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+
             all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
             update_child_state(child_id, state)
 
             return jsonify({
-                'message': f'{message_suffix}{loot_text}',
+                'message': f'讨伐成功！获得 {points_earned} 金币{crit_text}{loot_text}',
                 'monster_name': monster_name,
                 'base_points': points_earned,
                 'is_crit': is_crit,
-                'loot_add': loot['add_points'],
-                'loot_effect': loot['effect'],
-                'loot_name': loot['name'],
-                'all_defeated': all_defeated
+                'loot_add': loot.get('add_points', 0),
+                'loot_effect': loot.get('effect', ''),
+                'loot_name': loot.get('name', ''),
+                'all_defeated': all_defeated,
+                'points_earned': points_earned + loot.get('add_points', 0),
+                'error': None
             })
-
-        # ========== 其他普通任务（作业、物品归位） ==========
-        rank = get_task_rank(task['name'])
-        rank_range = TASK_RANKS[rank]['range']
-        base_min, base_max = rank_range
-        points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
-        crit_text = " 💥暴击！💥" if is_crit else ""
-
-        state['points'] += points_earned
-        add_points_record(child_id, state, '讨伐', points_earned, f'完成任务: {task["name"]}{crit_text}')
-
-        loot = get_random_loot()
-        loot_text = ""
-        if loot['add_points'] > 0:
-            state['points'] += loot['add_points']
-            add_points_record(child_id, state, '魔法掉落', loot['add_points'], f'{loot["name"]}')
-            loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
-
-        state.setdefault('defeated_monsters', []).append(task_id)
-        all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
-        update_child_state(child_id, state)
-
-        return jsonify({
-            'message': f'讨伐成功！获得 {points_earned} 金币{crit_text}{loot_text}',
-            'monster_name': monster_name,
-            'base_points': points_earned,
-            'is_crit': is_crit,
-            'loot_add': loot['add_points'],
-            'loot_effect': loot['effect'],
-            'loot_name': loot['name'],
-            'all_defeated': all_defeated
-        })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)})
 
     # ========== 传送门和彩蛋任务 ==========
     @app.route('/portal', methods=['POST'])
@@ -258,7 +271,6 @@ def register_fight_routes(app):
         tasks = get_tasks()
         enabled_tasks = [t for t in tasks if t.get('enabled', True)]
 
-        # ========== 传送门条件：完成 80% 的任务即可 ==========
         required_percent = 0.8
         required_count = int(len(enabled_tasks) * required_percent)
         if required_count < 1 and len(enabled_tasks) > 0:
@@ -267,13 +279,15 @@ def register_fight_routes(app):
         if len(state.get('defeated_monsters', [])) < required_count:
             return jsonify(
                 {'error': f'需要完成至少 {required_count} 个任务才能开启传送门（共{len(enabled_tasks)}个任务）'})
-        # ===================================================
 
         if state.get('portal_used', False):
             return jsonify({'error': '传送门今日已经开启过了'})
+
         state['portal_used'] = True
         from utils.game import generate_bonus_quests
-        state['bonus_quests'] = generate_bonus_quests()
+        bonus_quests = generate_bonus_quests()
+        state['bonus_quests'] = bonus_quests
+        save_bonus_quests(child_id, bonus_quests)
         update_child_state(child_id, state)
         return jsonify({'status': 'ok'})
 
@@ -284,25 +298,31 @@ def register_fight_routes(app):
         child_id = session.get('child_id', 'default_child')
         state = get_child_state(child_id)
         bonus_list = state.get('bonus_quests', [])
+
         if idx >= len(bonus_list):
             return jsonify({'error': '任务不存在'})
+
         quest = bonus_list[idx]
         if quest.get('completed', False):
             return jsonify({'error': '这个彩蛋任务已经完成过了'})
 
-        points_earned, is_crit = get_random_points_with_crit(1, 4)
+        points_range = quest.get('points_range', [1, 4])
+        points_earned, is_crit = get_random_points_with_crit(points_range[0], points_range[1])
+
         state['points'] += points_earned
         crit_text = " 💥暴击！💥" if is_crit else ""
-        add_points_record(child_id, state, '彩蛋', points_earned, f'完成: {quest["name"]}{crit_text}')
+        add_points_record(child_id, '彩蛋', points_earned, f'完成: {quest["name"]}{crit_text}', state['points'])
+
         quest['completed'] = True
         state['bonus_quests'] = bonus_list
+        save_bonus_quests(child_id, bonus_list)
         update_child_state(child_id, state)
 
         loot = get_random_loot()
         loot_text = ""
         if loot['add_points'] > 0:
             state['points'] += loot['add_points']
-            add_points_record(child_id, state, '彩蛋掉落', loot['add_points'], loot['name'])
+            add_points_record(child_id, '彩蛋掉落', loot['add_points'], loot['name'], state['points'])
             loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
             update_child_state(child_id, state)
 
@@ -319,15 +339,17 @@ def register_fight_routes(app):
         state = get_child_state(child_id)
         tasks = get_tasks()
         enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+
         if len(state.get('defeated_monsters', [])) != len(enabled_tasks):
             return jsonify({'error': '必须完成全部任务才能开启宝箱'})
+
         if state.get('treasure_taken_today', False):
             return jsonify({'error': '今天的宝箱已经开启过了'})
 
         points_earned, is_crit = get_random_points_with_crit(5, 8)
         state['points'] += points_earned
         crit_text = " 💥暴击！💥" if is_crit else ""
-        add_points_record(child_id, state, '全清宝藏', points_earned, f'全清宝箱奖励{crit_text}')
+        add_points_record(child_id, '全清宝藏', points_earned, f'全清宝箱奖励{crit_text}', state['points'])
         state['treasure_taken_today'] = True
         update_child_state(child_id, state)
 

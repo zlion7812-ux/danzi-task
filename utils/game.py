@@ -31,6 +31,9 @@ def get_task_rank(task_name):
 def get_random_loot():
     """获取随机掉落道具"""
     loot_table = get_loot_table()
+    if not loot_table:
+        return {'name': '🍬 小糖果', 'add_points': 1, 'effect': '+1积分'}
+
     pool = []
     for item in loot_table:
         name = item['name']
@@ -46,6 +49,9 @@ def get_random_loot():
 def generate_bonus_quests():
     """生成随机彩蛋任务"""
     bonus_pool = get_bonus_quests_pool()
+    if not bonus_pool:
+        return []
+
     count = random.randint(2, 4)
     selected = random.sample(bonus_pool, min(count, len(bonus_pool)))
     return [{
@@ -85,11 +91,7 @@ def check_time_limit(task_name):
             return False, "⏰ 作业需要在19:30前完成！明天记得早点写作业～"
         return True, ""
 
-    # 复习：无时间限制
-    elif "复习" in task_name:
-        return True, ""
-
-    # 阅读、物品归位无时间限制
+    # 其他任务无时间限制
     else:
         return True, ""
 

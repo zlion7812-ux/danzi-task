@@ -1,5 +1,5 @@
-from flask import render_template, session
-from utils.data import get_tasks, get_monsters, get_child_state, get_config, get_shop_items, get_task_details
+from flask import render_template, session, jsonify
+from utils.data import get_tasks, get_monsters, get_child_state, get_config, get_shop_items
 
 
 def register_main_routes(app):
@@ -11,7 +11,6 @@ def register_main_routes(app):
         monsters = get_monsters()
         config = get_config()
         streak_rule = config.get('streak_rule', 'login')
-        task_details = get_task_details()
 
         enabled_tasks = [t for t in tasks if t.get('enabled', True)]
         defeated = state.get('defeated_monsters', [])
@@ -26,14 +25,14 @@ def register_main_routes(app):
 
         bonus_active = (state.get('bonus_quests') and len(state.get('bonus_quests', [])) > 0)
 
-        # 构建怪物 ID 到怪物信息的映射字典（提高匹配效率）
+        # 构建怪物 ID 到怪物信息的映射字典
         monster_map = {m['id']: m for m in monsters}
 
         task_list = []
         for task in enabled_tasks:
-            # 使用映射字典快速查找怪物
             monster = monster_map.get(task['monster_id'])
-            desc = task_details.get(task['name'], task.get('description', ''))
+            # 直接从 task 中获取描述（不再使用单独的 task_details.json）
+            desc = task.get('description', '')
 
             if monster:
                 task_list.append({
@@ -45,7 +44,6 @@ def register_main_routes(app):
                     'monster_name': monster['name']
                 })
             else:
-                # 如果找不到怪物，使用默认问号图标
                 task_list.append({
                     'id': task['id'],
                     'name': task['name'],
@@ -101,3 +99,44 @@ def register_main_routes(app):
         from utils.data import update_child_state
         update_child_state(child_id, state)
         return {'status': 'ok'}
+
+    @app.route('/tasks_list')
+    def tasks_list():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        monsters = get_monsters()
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+        task_list = []
+        for task in enabled_tasks:
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            icon = monster['icon'] if monster else '❓'
+            task_list.append({
+                'id': task['id'],
+                'name': task['name'],
+                'icon': icon,
+            })
+        return jsonify({
+            'tasks': task_list,
+            'completed_ids': state.get('defeated_monsters', [])
+        })
+
+    @app.route('/shop')
+    def shop_page():
+        """商城页面"""
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        shop_items = get_shop_items()
+        return render_template('shop.html',
+                               user_points=state['points'],
+                               shop_items=shop_items)
+
+    @app.route('/points')
+    def points_page():
+        """积分记录页面"""
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        points_history = state.get('points_history', [])[:30]
+        return render_template('points.html',
+                               user_points=state['points'],
+                               points_history=points_history)
