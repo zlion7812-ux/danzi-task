@@ -1,0 +1,2772 @@
+=== BACKEND ===
+from flask import Flask
+from routes.main import register_main_routes
+from routes.fight import register_fight_routes
+from routes.shop import register_shop_routes
+from routes.admin import register_admin_routes
+import os
+
+app = Flask(__name__)
+app.secret_key = 'danzi_secret_key_2026'
+
+register_main_routes(app)
+register_fight_routes(app)
+register_shop_routes(app)
+register_admin_routes(app)
+
+if __name__ == '__main__':
+    print("=" * 50)
+    print("🐉 蛋仔勇者之路 启动！")
+    print("🌐 访问地址:")
+    print("   主页面: http://127.0.0.1:5001")
+    print("   管理后台: http://127.0.0.1:5001/admin/login")
+    print("   初始密码: admin123")
+    print("=" * 50)
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host='0.0.0.0', port=port, debug=False)
+from flask import render_template, request, session, jsonify, redirect, url_for
+from utils.auth import login_required
+from utils.data import get_tasks, get_monsters, get_config, save_tasks, save_monsters, save_config, reset_daily_tasks, \
+    update_streak, get_child_state, update_child_state, add_points_record, get_shop_items, add_shop_item, update_shop_item, delete_shop_item
+import os
+import json
+
+DB_FILE = 'danzi_data.db'
+
+
+def register_admin_routes(app):
+    @app.route('/admin/login', methods=['GET', 'POST'])
+    def admin_login():
+        if request.method == 'POST':
+            password = request.form.get('password')
+            config = get_config()
+            if password == config.get('admin_password', 'admin123'):
+                session['admin_logged_in'] = True
+                return redirect(url_for('admin'))
+            else:
+                return '<h3>密码错误</h3><a href="/admin/login">重新登录</a>'
+        return '''
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="UTF-8"><title>管理员登录</title><style>body{background:#1a1a2e;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;} .card{background:#16213e;padding:30px;border-radius:20px;} input{padding:10px;margin:10px 0;width:100%;} button{background:#44aa44;padding:10px;border:none;color:white;width:100%;cursor:pointer;}</style></head>
+            <body><div class="card"><h2>🐉 管理员登录</h2><form method="post"><input type="password" name="password" placeholder="请输入密码" autofocus><button type="submit">登录</button></form></div></body>
+            </html>
+        '''
+
+    @app.route('/admin')
+    @login_required
+    def admin():
+        return render_template('admin.html')
+
+    @app.route('/admin/data')
+    @login_required
+    def admin_data():
+        tasks = get_tasks()
+        monsters = get_monsters()
+        config = get_config()
+        return jsonify({'tasks': tasks, 'monsters': monsters, 'config': config})
+
+    @app.route('/admin/task/<task_id>')
+    @login_required
+    def admin_get_task(task_id):
+        tasks = get_tasks()
+        task = next((t for t in tasks if t['id'] == task_id), None)
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+        return jsonify(task)
+
+    @app.route('/admin/update_task', methods=['POST'])
+    @login_required
+    def admin_update_task():
+        data = request.get_json()
+        task_id = data.get('task_id')
+        tasks = get_tasks()
+        task = next((t for t in tasks if t['id'] == task_id), None)
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+        task['name'] = data.get('name', task['name'])
+        task['monster_id'] = data.get('monster_id', task['monster_id'])
+        task['points'] = data.get('points', task['points'])
+        task['order'] = data.get('order', task.get('order', 999))
+        task['description'] = data.get('description', task.get('description', ''))
+        task['enabled'] = data.get('enabled', task.get('enabled', True))
+        save_tasks(tasks)
+        return jsonify({'status': 'ok', 'task': task})
+
+    @app.route('/admin/add_task', methods=['POST'])
+    @login_required
+    def admin_add_task():
+        data = request.get_json()
+        tasks = get_tasks()
+        import uuid
+        new_id = f"task_{uuid.uuid4().hex[:8]}"
+        max_order = max([t.get('order', 0) for t in tasks]) if tasks else 0
+        new_task = {
+            'id': new_id,
+            'name': data.get('name', '新任务'),
+            'monster_id': data.get('monster_id'),
+            'points': data.get('points', 3),
+            'order': data.get('order', max_order + 1),
+            'description': data.get('description', ''),
+            'enabled': data.get('enabled', True)
+        }
+        tasks.append(new_task)
+        save_tasks(tasks)
+        return jsonify({'status': 'ok', 'task': new_task})
+
+    @app.route('/admin/delete_task', methods=['POST'])
+    @login_required
+    def admin_delete_task():
+        data = request.get_json()
+        tasks = get_tasks()
+        tasks = [t for t in tasks if t['id'] != data['task_id']]
+        save_tasks(tasks)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/add_monster', methods=['POST'])
+    @login_required
+    def admin_add_monster():
+        data = request.get_json()
+        monsters = get_monsters()
+        import uuid
+        new_id = f"mon_{uuid.uuid4().hex[:8]}"
+        new_monster = {
+            'id': new_id,
+            'name': data['name'],
+            'icon': data.get('icon', '👾'),
+            'default_points': data['default_points'],
+            'description': data.get('description', '')
+        }
+        monsters.append(new_monster)
+        save_monsters(monsters)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/update_monster', methods=['POST'])
+    @login_required
+    def admin_update_monster():
+        data = request.get_json()
+        monsters = get_monsters()
+        for monster in monsters:
+            if monster['id'] == data['monster_id']:
+                monster['name'] = data['name']
+                monster['icon'] = data.get('icon', '👾')
+                monster['default_points'] = data['default_points']
+                monster['description'] = data.get('description', '')
+                break
+        save_monsters(monsters)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/delete_monster', methods=['POST'])
+    @login_required
+    def admin_delete_monster():
+        data = request.get_json()
+        monsters = get_monsters()
+        monsters_to_save = [m for m in monsters if m['id'] != data['monster_id']]
+        save_monsters(monsters_to_save)
+        return jsonify({'status': 'ok'})
+
+    # ========== 商品管理接口 ==========
+    @app.route('/admin/shop_items')
+    @login_required
+    def admin_get_shop_items():
+        items = get_shop_items()
+        return jsonify(items)
+
+    @app.route('/admin/shop_item/<int:item_id>')
+    @login_required
+    def admin_get_shop_item(item_id):
+        items = get_shop_items()
+        item = next((i for i in items if i['id'] == item_id), None)
+        if not item:
+            return jsonify({'error': '商品不存在'}), 404
+        return jsonify(item)
+
+    @app.route('/admin/add_shop_item', methods=['POST'])
+    @login_required
+    def admin_add_shop_item():
+        data = request.get_json()
+        new_item = add_shop_item(data)
+        return jsonify({'status': 'ok', 'item': new_item})
+
+    @app.route('/admin/update_shop_item', methods=['POST'])
+    @login_required
+    def admin_update_shop_item():
+        data = request.get_json()
+        item_id = data.get('id')
+        if not item_id:
+            return jsonify({'error': '商品ID不能为空'}), 400
+        update_shop_item(item_id, data)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/delete_shop_item', methods=['POST'])
+    @login_required
+    def admin_delete_shop_item():
+        data = request.get_json()
+        item_id = data.get('id')
+        if not item_id:
+            return jsonify({'error': '商品ID不能为空'}), 400
+        success = delete_shop_item(item_id)
+        if success:
+            return jsonify({'status': 'ok'})
+        else:
+            return jsonify({'error': '商品不存在'}), 404
+
+    @app.route('/admin/update_config', methods=['POST'])
+    @login_required
+    def admin_update_config():
+        data = request.get_json()
+        config = get_config()
+        if 'streak_rule' in data:
+            config['streak_rule'] = data['streak_rule']
+        if 'admin_password' in data and data['admin_password']:
+            config['admin_password'] = data['admin_password']
+        save_config(config)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/logout')
+    def logout():
+        session.pop('admin_logged_in', None)
+        return redirect(url_for('index'))
+
+    @app.route('/admin/reset_child_day', methods=['POST'])
+    @login_required
+    def admin_reset_child_day():
+        child_id = 'default_child'
+        reset_daily_tasks(child_id)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/reset_streak', methods=['POST'])
+    @login_required
+    def admin_reset_streak():
+        child_id = 'default_child'
+        update_streak(child_id, 1)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/reset_all_data', methods=['POST'])
+    @login_required
+    def admin_reset_all_data():
+        if os.path.exists(DB_FILE):
+            os.remove(DB_FILE)
+        from utils.data import init_db
+        init_db()
+        return jsonify({'status': 'ok'})
+
+    @app.route('/admin/adjust_points', methods=['POST'])
+    @login_required
+    def admin_adjust_points():
+        data = request.get_json()
+        amount = data.get('amount')
+        reason = data.get('reason', '管理员调整')
+
+        if amount is None:
+            return jsonify({'error': '请输入积分数量'})
+
+        if amount == 0:
+            return jsonify({'error': '调整数量不能为0'})
+
+        child_id = 'default_child'
+        state = get_child_state(child_id)
+
+        if amount < 0 and state['points'] + amount < 0:
+            return jsonify({'error': f'积分不足！当前积分：{state["points"]}，无法扣除{-amount}分'})
+
+        old_points = state['points']
+        state['points'] += amount
+
+        add_points_record(child_id, '管理员调整', amount, reason, state['points'])
+        update_child_state(child_id, state)
+
+        return jsonify({
+            'status': 'ok',
+            'old_points': old_points,
+            'new_points': state['points'],
+            'amount': amount,
+            'message': f'{"增加" if amount > 0 else "扣除"} {abs(amount)} 积分成功！'
+        })from flask import request, jsonify, session
+from datetime import datetime
+import random
+from utils.data import get_tasks, get_monsters, get_child_state, update_child_state, add_points_record, add_defeated_monster
+from utils.game import get_task_rank, TASK_RANKS, get_random_points_with_crit, get_random_loot, check_time_limit, \
+    calculate_reading_reward, calculate_sport_reward, can_start_sport, calculate_jump_rope_reward, can_start_jump_rope
+
+
+def register_fight_routes(app):
+    # ========== 复习/阅读/运动/跳绳：开始计时 ==========
+    @app.route('/start_timer', methods=['POST'])
+    def start_timer():
+        data = request.get_json()
+        task_id = data.get('task_id')
+        task_name = data.get('task_name')
+
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+
+        if state.get('active_timer'):
+            return jsonify({'error': '已有进行中的任务，请先结束当前任务'})
+
+        if task_id in state.get('defeated_monsters', []):
+            return jsonify({'error': '这个任务今天已经完成过了'})
+
+        can_complete, time_msg = check_time_limit(task_name)
+        if not can_complete:
+            return jsonify({'error': time_msg})
+
+        # 跳绳任务和运动任务：检查时间限制（20:50前）
+        if "跳绳" in task_name or "运动" in task_name:
+            if "跳绳" in task_name:
+                can_start, sport_msg = can_start_jump_rope()
+            else:
+                can_start, sport_msg = can_start_sport()
+            if not can_start:
+                return jsonify({'error': sport_msg})
+
+        state['active_timer'] = {
+            'task_id': task_id,
+            'task_name': task_name,
+            'start_time': datetime.now().isoformat()
+        }
+        update_child_state(child_id, state)
+
+        return jsonify({
+            'status': 'ok',
+            'message': f'⏰ 开始{task_name}！加油～'
+        })
+
+    # ========== 结束计时 ==========
+    @app.route('/end_timer', methods=['POST'])
+    def end_timer():
+        data = request.get_json()
+        task_name = data.get('task_name')
+        jump_count = data.get('jump_count', None)
+
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+
+        if not state.get('active_timer'):
+            return jsonify({'error': '没有进行中的任务'})
+
+        timer = state['active_timer']
+        if timer['task_name'] != task_name:
+            return jsonify({'error': '任务名称不匹配'})
+
+        tasks = get_tasks()
+        monsters = get_monsters()
+        task = next((t for t in tasks if t['id'] == timer['task_id']), None)
+        if not task:
+            return jsonify({'error': '任务不存在'})
+
+        if timer['task_id'] in state.get('defeated_monsters', []):
+            state['active_timer'] = None
+            update_child_state(child_id, state)
+            return jsonify({'error': '这个任务已经完成过了'})
+
+        # ========== 跳绳任务：特殊积分计算 ==========
+        if "跳绳" in task['name']:
+            if jump_count is None:
+                return jsonify({'error': '请输入跳绳个数'})
+
+            total_points, reward_desc, is_qualified = calculate_jump_rope_reward(jump_count)
+
+            if not is_qualified:
+                return jsonify({'error': reward_desc})
+
+            is_crit = random.random() < 0.2
+            if is_crit:
+                total_points = total_points * 2
+                crit_text = " 💥暴击！💥"
+            else:
+                crit_text = ""
+
+            state['points'] += total_points
+            add_defeated_monster(child_id, timer['task_id'])
+            add_points_record(child_id, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}', state['points'])
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+
+            state['active_timer'] = None
+            enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+            all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+            update_child_state(child_id, state)
+
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            monster_name = monster['name'] if monster else task['name']
+
+            return jsonify({
+                'status': 'ok',
+                'message': f'🎉 {task["name"]}完成！{reward_desc}{crit_text}{loot_text}',
+                'monster_name': monster_name,
+                'points_earned': total_points,
+                'jump_count': jump_count,
+                'is_crit': is_crit,
+                'loot_add': loot['add_points'],
+                'loot_effect': loot['effect'],
+                'all_defeated': all_defeated
+            })
+
+        # ========== 运动任务（原有逻辑） ==========
+        elif "运动" in task['name']:
+            start_time = datetime.fromisoformat(timer['start_time'])
+            end_time = datetime.now()
+            minutes = int((end_time - start_time).total_seconds() / 60)
+
+            if minutes < 10:
+                return jsonify({'error': f'运动时长不足10分钟（当前{minutes}分钟），无法完成'})
+
+            total_points, reward_desc = calculate_sport_reward(minutes)
+            if total_points == 0:
+                return jsonify({'error': reward_desc})
+
+            is_crit = random.random() < 0.2
+            if is_crit:
+                total_points = total_points * 2
+                crit_text = " 💥暴击！💥"
+            else:
+                crit_text = ""
+
+            state['points'] += total_points
+            add_defeated_monster(child_id, timer['task_id'])
+            add_points_record(child_id, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}', state['points'])
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+
+            state['active_timer'] = None
+            enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+            all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+            update_child_state(child_id, state)
+
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            monster_name = monster['name'] if monster else task['name']
+
+            return jsonify({
+                'status': 'ok',
+                'message': f'🎉 {task["name"]}完成！{reward_desc}{crit_text}{loot_text}',
+                'monster_name': monster_name,
+                'points_earned': total_points,
+                'minutes': minutes,
+                'is_crit': is_crit,
+                'loot_add': loot['add_points'],
+                'loot_effect': loot['effect'],
+                'all_defeated': all_defeated
+            })
+
+        # ========== 阅读/复习：原有积分计算 ==========
+        else:
+            start_time = datetime.fromisoformat(timer['start_time'])
+            end_time = datetime.now()
+            minutes = int((end_time - start_time).total_seconds() / 60)
+
+            if minutes < 15:
+                return jsonify({'error': f'时长不足15分钟（当前{minutes}分钟），请继续学习！'})
+
+            base_points, extra_points, total_points, reward_desc = calculate_reading_reward(minutes)
+            is_crit = random.random() < 0.2
+            if is_crit:
+                total_points = total_points * 2
+                crit_text = " 💥暴击！💥"
+            else:
+                crit_text = ""
+
+            state['points'] += total_points
+            add_defeated_monster(child_id, timer['task_id'])
+            add_points_record(child_id, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}', state['points'])
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+
+            state['active_timer'] = None
+            enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+            all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+            update_child_state(child_id, state)
+
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            monster_name = monster['name'] if monster else task['name']
+
+            return jsonify({
+                'status': 'ok',
+                'message': f'🎉 {task["name"]}完成！{reward_desc}{crit_text}{loot_text}',
+                'monster_name': monster_name,
+                'points_earned': total_points,
+                'minutes': minutes,
+                'is_crit': is_crit,
+                'loot_add': loot['add_points'],
+                'loot_effect': loot['effect'],
+                'all_defeated': all_defeated
+            })
+
+    # ========== 普通任务（起床、作业、物品归位） ==========
+    @app.route('/fight', methods=['POST'])
+    def fight():
+        try:
+            data = request.get_json()
+            task_id = data.get('task_id')
+            if not task_id:
+                return jsonify({'error': '任务ID不能为空'})
+
+            child_id = session.get('child_id', 'default_child')
+            state = get_child_state(child_id)
+            tasks = get_tasks()
+            monsters = get_monsters()
+            enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+
+            task = next((t for t in enabled_tasks if t['id'] == task_id), None)
+            if not task:
+                return jsonify({'error': f'任务不存在: {task_id}'})
+
+            if "起床" not in task['name'] and "运动" not in task['name'] and "跳绳" not in task['name']:
+                can_complete, time_msg = check_time_limit(task['name'])
+                if not can_complete:
+                    return jsonify({'error': time_msg})
+
+            if task_id in state.get('defeated_monsters', []):
+                return jsonify({'error': '这只怪物已经讨伐过了！'})
+
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            monster_name = monster['name'] if monster else task['name']
+
+            # ========== 起床任务特殊处理 ==========
+            if "起床" in task['name']:
+                now = datetime.now()
+                morning_deadline = now.replace(hour=7, minute=15, second=0, microsecond=0)
+                is_early = now <= morning_deadline
+
+                if is_early:
+                    rank = get_task_rank(task['name'])
+                    rank_range = TASK_RANKS[rank]['range']
+                    base_min, base_max = rank_range
+                    points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
+                    crit_text = " 💥暴击！💥" if is_crit else ""
+                    message_suffix = f"获得 {points_earned} 金币{crit_text}"
+
+                    state['points'] += points_earned
+                    add_defeated_monster(child_id, task_id)
+                    add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]} (早起){crit_text}', state['points'])
+
+                    loot = get_random_loot()
+                    loot_text = ""
+                    if loot['add_points'] > 0:
+                        state['points'] += loot['add_points']
+                        add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                        loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+                else:
+                    points_earned = 1
+                    is_crit = False
+                    crit_text = ""
+                    message_suffix = f"获得 {points_earned} 金币（迟到了，明天早点起哦）"
+
+                    state['points'] += points_earned
+                    add_defeated_monster(child_id, task_id)
+                    add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]} (迟到)', state['points'])
+                    loot_text = ""
+                    loot = {'add_points': 0, 'effect': '无掉落', 'name': ''}
+
+                all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+                update_child_state(child_id, state)
+
+                return jsonify({
+                    'message': f'{message_suffix}{loot_text}',
+                    'monster_name': monster_name,
+                    'base_points': points_earned,
+                    'is_crit': is_crit,
+                    'loot_add': loot.get('add_points', 0),
+                    'loot_effect': loot.get('effect', ''),
+                    'loot_name': loot.get('name', ''),
+                    'all_defeated': all_defeated,
+                    'points_earned': points_earned + loot.get('add_points', 0),
+                    'error': None
+                })
+
+            # ========== 其他普通任务（作业、物品归位） ==========
+            rank = get_task_rank(task['name'])
+            rank_range = TASK_RANKS[rank]['range']
+            base_min, base_max = rank_range
+            points_earned, is_crit = get_random_points_with_crit(base_min, base_max)
+            crit_text = " 💥暴击！💥" if is_crit else ""
+
+            state['points'] += points_earned
+            add_defeated_monster(child_id, task_id)
+            add_points_record(child_id, '讨伐', points_earned, f'完成任务: {task["name"]}{crit_text}', state['points'])
+
+            loot = get_random_loot()
+            loot_text = ""
+            if loot['add_points'] > 0:
+                state['points'] += loot['add_points']
+                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+
+            all_defeated = len(state['defeated_monsters']) == len(enabled_tasks)
+            update_child_state(child_id, state)
+
+            return jsonify({
+                'message': f'讨伐成功！获得 {points_earned} 金币{crit_text}{loot_text}',
+                'monster_name': monster_name,
+                'base_points': points_earned,
+                'is_crit': is_crit,
+                'loot_add': loot.get('add_points', 0),
+                'loot_effect': loot.get('effect', ''),
+                'loot_name': loot.get('name', ''),
+                'all_defeated': all_defeated,
+                'points_earned': points_earned + loot.get('add_points', 0),
+                'error': None
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)})
+
+    # ========== 以下路由保持不变（portal, complete_bonus, treasure） ==========
+    @app.route('/portal', methods=['POST'])
+    def portal():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+
+        required_percent = 0.8
+        required_count = int(len(enabled_tasks) * required_percent)
+        if required_count < 1 and len(enabled_tasks) > 0:
+            required_count = 1
+
+        if len(state.get('defeated_monsters', [])) < required_count:
+            return jsonify(
+                {'error': f'需要完成至少 {required_count} 个任务才能开启传送门（共{len(enabled_tasks)}个任务）'})
+
+        if state.get('portal_used', False):
+            return jsonify({'error': '传送门今日已经开启过了'})
+
+        state['portal_used'] = True
+        from utils.game import generate_bonus_quests
+        bonus_quests = generate_bonus_quests()
+        state['bonus_quests'] = bonus_quests
+        from utils.data import save_bonus_quests
+        save_bonus_quests(child_id, bonus_quests)
+        update_child_state(child_id, state)
+        return jsonify({'status': 'ok'})
+
+    @app.route('/complete_bonus', methods=['POST'])
+    def complete_bonus():
+        data = request.get_json()
+        idx = data['bonus_index']
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        bonus_list = state.get('bonus_quests', [])
+
+        if idx >= len(bonus_list):
+            return jsonify({'error': '任务不存在'})
+
+        quest = bonus_list[idx]
+        if quest.get('completed', False):
+            return jsonify({'error': '这个彩蛋任务已经完成过了'})
+
+        points_range = quest.get('points_range', [1, 4])
+        points_earned, is_crit = get_random_points_with_crit(points_range[0], points_range[1])
+
+        state['points'] += points_earned
+        crit_text = " 💥暴击！💥" if is_crit else ""
+        add_points_record(child_id, '彩蛋', points_earned, f'完成: {quest["name"]}{crit_text}', state['points'])
+
+        quest['completed'] = True
+        state['bonus_quests'] = bonus_list
+        from utils.data import save_bonus_quests
+        save_bonus_quests(child_id, bonus_list)
+        update_child_state(child_id, state)
+
+        loot = get_random_loot()
+        loot_text = ""
+        if loot['add_points'] > 0:
+            state['points'] += loot['add_points']
+            add_points_record(child_id, '彩蛋掉落', loot['add_points'], loot['name'], state['points'])
+            loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+            update_child_state(child_id, state)
+
+        return jsonify({
+            'quest_name': quest['name'],
+            'points': points_earned,
+            'is_crit': is_crit,
+            'loot_effect': f"获得 {points_earned} 金币{crit_text}{loot_text}"
+        })
+
+    @app.route('/treasure', methods=['POST'])
+    def treasure():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+
+        if len(state.get('defeated_monsters', [])) != len(enabled_tasks):
+            return jsonify({'error': '必须完成全部任务才能开启宝箱'})
+
+        if state.get('treasure_taken_today', False):
+            return jsonify({'error': '今天的宝箱已经开启过了'})
+
+        points_earned, is_crit = get_random_points_with_crit(5, 8)
+        state['points'] += points_earned
+        crit_text = " 💥暴击！💥" if is_crit else ""
+        add_points_record(child_id, '全清宝藏', points_earned, f'全清宝箱奖励{crit_text}', state['points'])
+        state['treasure_taken_today'] = True
+        update_child_state(child_id, state)
+
+        return jsonify({
+            'loot_info': f'🎉 全清宝箱奖励 🎉 +{points_earned}金币{crit_text}',
+            'reward_points': points_earned,
+            'is_crit': is_crit
+        })from flask import render_template, session, jsonify
+from utils.data import get_tasks, get_monsters, get_child_state, get_config, get_shop_items
+
+
+def register_main_routes(app):
+    @app.route('/')
+    def index():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        monsters = get_monsters()
+        config = get_config()
+        streak_rule = config.get('streak_rule', 'login')
+
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+        defeated = state.get('defeated_monsters', [])
+
+        # ========== 传送门条件：完成 80% 的任务即可 ==========
+        required_percent = 0.8
+        required_count = int(len(enabled_tasks) * required_percent)
+        if required_count < 1 and len(enabled_tasks) > 0:
+            required_count = 1
+        all_defeated = len(defeated) >= required_count and len(enabled_tasks) > 0
+        # ===================================================
+
+        bonus_active = (state.get('bonus_quests') and len(state.get('bonus_quests', [])) > 0)
+
+        # 构建怪物 ID 到怪物信息的映射字典
+        monster_map = {m['id']: m for m in monsters}
+
+        task_list = []
+        for task in enabled_tasks:
+            monster = monster_map.get(task['monster_id'])
+            # 直接从 task 中获取描述（不再使用单独的 task_details.json）
+            desc = task.get('description', '')
+
+            if monster:
+                task_list.append({
+                    'id': task['id'],
+                    'name': task['name'],
+                    'description': desc,
+                    'points': task['points'],
+                    'icon': monster['icon'],
+                    'monster_name': monster['name']
+                })
+            else:
+                task_list.append({
+                    'id': task['id'],
+                    'name': task['name'],
+                    'description': desc,
+                    'points': task['points'],
+                    'icon': '❓',
+                    'monster_name': '未知怪物'
+                })
+
+        shop_items = get_shop_items()
+
+        rule_display = "🟢 宽松模式" if streak_rule == "login" else "🔴 严格模式"
+        rule_tip = "登录即涨连胜" if streak_rule == "login" else "必须全清才涨连胜"
+
+        return render_template('index.html',
+                               tasks=task_list,
+                               defeated_ids=defeated,
+                               all_defeated=all_defeated,
+                               portal_used=state.get('portal_used', False),
+                               bonus_active=bonus_active,
+                               bonus_quests=state.get('bonus_quests', []),
+                               user_points=state['points'],
+                               streak=state['streak'],
+                               shop_items=shop_items,
+                               exchange_history=state.get('exchange_history', [])[:20][::-1],
+                               points_history=state.get('points_history', [])[:30],
+                               rule_display=rule_display,
+                               rule_tip=rule_tip)
+
+    @app.route('/status')
+    def status():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        return {'points': state['points'], 'streak': state['streak']}
+
+    @app.route('/reset_day', methods=['POST'])
+    def reset_day():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        state['defeated_monsters'] = []
+        state['portal_used'] = False
+        state['bonus_quests'] = []
+        state['treasure_taken_today'] = False
+        from utils.data import update_child_state
+        update_child_state(child_id, state)
+        return {'status': 'ok'}
+
+    @app.route('/reset_streak', methods=['POST'])
+    def reset_streak():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        state['streak'] = 1
+        from utils.data import update_child_state
+        update_child_state(child_id, state)
+        return {'status': 'ok'}
+
+    @app.route('/tasks_list')
+    def tasks_list():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        tasks = get_tasks()
+        monsters = get_monsters()
+        enabled_tasks = [t for t in tasks if t.get('enabled', True)]
+        task_list = []
+        for task in enabled_tasks:
+            monster = next((m for m in monsters if m['id'] == task['monster_id']), None)
+            icon = monster['icon'] if monster else '❓'
+            task_list.append({
+                'id': task['id'],
+                'name': task['name'],
+                'icon': icon,
+            })
+        return jsonify({
+            'tasks': task_list,
+            'completed_ids': state.get('defeated_monsters', [])
+        })
+
+    @app.route('/shop')
+    def shop_page():
+        """商城页面"""
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        shop_items = get_shop_items()
+        return render_template('shop.html',
+                               user_points=state['points'],
+                               shop_items=shop_items)
+
+    @app.route('/points')
+    def points_page():
+        """积分记录页面"""
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        points_history = state.get('points_history', [])[:30]
+        return render_template('points.html',
+                               user_points=state['points'],
+                               points_history=points_history)from flask import request, jsonify, session
+from datetime import datetime
+from utils.data import get_child_state, update_child_state, add_points_record, get_shop_items, add_exchange_record, \
+    increment_weekly_exchange
+from utils.game import is_weekend
+
+
+def register_shop_routes(app):
+    @app.route('/buy', methods=['POST'])
+    def buy():
+        data = request.get_json()
+        item_id = data['item_id']
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+
+        shop_items = get_shop_items()
+        item = next((i for i in shop_items if i['id'] == item_id), None)
+        if not item:
+            return jsonify({'error': '商品不存在'})
+
+        if item.get('type') == 'weekend_only' and not is_weekend():
+            return jsonify({'error': '这个道具只能在周末兑换！'})
+
+        if item.get('weekly_limit'):
+            week_num = datetime.today().isocalendar()[1]
+            key = f"{item_id}_{week_num}"
+            count = state.get('weekly_exchanges', {}).get(key, 0)
+            if count >= item['weekly_limit']:
+                return jsonify({'error': f'本周已兑换{item["weekly_limit"]}次，不能再兑换了！'})
+
+        if state['points'] < item['price']:
+            return jsonify({'error': f'积分不足，需要{item["price"]}积分'})
+
+        # 扣除积分
+        old_points = state['points']
+        state['points'] -= item['price']
+
+        # 记录积分变动
+        add_points_record(child_id, '兑换', -item['price'], f'兑换 {item["name"]}', state['points'])
+
+        # 记录兑换历史
+        add_exchange_record(child_id, item['name'], item['price'])
+
+        # 更新周限购
+        if item.get('weekly_limit'):
+            week_num = datetime.today().isocalendar()[1]
+            key = f"{item_id}_{week_num}"
+            increment_weekly_exchange(child_id, key)
+
+        # 更新state中的exchange_history用于显示
+        state.setdefault('exchange_history', []).insert(0, {
+            'time': datetime.now().strftime('%H:%M'),
+            'item_name': item['name'],
+            'price': item['price']
+        })
+
+        update_child_state(child_id, state)
+        return jsonify({'message': f'兑换 {item["name"]} 成功！剩余{state["points"]}积分'})
+from functools import wraps
+from flask import session, redirect, url_for
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function"""
+数据层核心模块
+统一使用 SQLite 存储所有数据
+"""
+
+import sqlite3
+import json
+import os
+from datetime import date, datetime
+from typing import List, Dict, Any, Optional
+
+# 数据库文件路径
+DB_FILE = 'danzi_data.db'
+
+# ========== 数据库初始化 ==========
+
+def get_connection():
+    """获取数据库连接"""
+    return sqlite3.connect(DB_FILE)
+
+def init_db():
+    """初始化数据库：创建所有表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # 1. 用户表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            child_id TEXT PRIMARY KEY,
+            points INTEGER DEFAULT 0,
+            streak INTEGER DEFAULT 1,
+            last_date TEXT,
+            portal_used INTEGER DEFAULT 0,
+            treasure_taken_today INTEGER DEFAULT 0
+        )
+    ''')
+
+    # 2. 每日完成任务表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS daily_completed (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            child_id TEXT,
+            task_id TEXT,
+            date TEXT,
+            UNIQUE(child_id, task_id, date)
+        )
+    ''')
+
+    # 3. 积分历史表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS points_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            child_id TEXT,
+            time TEXT,
+            source TEXT,
+            change INTEGER,
+            description TEXT,
+            total INTEGER
+        )
+    ''')
+
+    # 4. 兑换历史表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS exchange_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            child_id TEXT,
+            time TEXT,
+            item_name TEXT,
+            price INTEGER
+        )
+    ''')
+
+    # 5. 周限购记录表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS weekly_exchanges (
+            child_id TEXT,
+            key TEXT,
+            count INTEGER,
+            PRIMARY KEY (child_id, key)
+        )
+    ''')
+
+    # 6. 彩蛋任务表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bonus_quests (
+            child_id TEXT,
+            date TEXT,
+            quest_data TEXT,
+            PRIMARY KEY (child_id, date)
+        )
+    ''')
+
+    # 7. 活跃计时器表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS active_timer (
+            child_id TEXT PRIMARY KEY,
+            task_id TEXT,
+            task_name TEXT,
+            start_time TEXT
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+    # 导入初始配置数据
+    import_from_json_seeds()
+
+# ========== 从JSON文件导入初始数据 ==========
+
+def import_from_json_seeds():
+    """首次运行时从JSON文件导入配置数据到数据库"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # 创建配置表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tasks_config (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            monster_id TEXT,
+            description TEXT,
+            default_points INTEGER,
+            enabled INTEGER,
+            "order" INTEGER
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS monsters_config (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            icon TEXT,
+            default_points INTEGER,
+            description TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shop_items_config (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            price INTEGER,
+            icon TEXT,
+            type TEXT,
+            weekly_limit INTEGER,
+            description TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS loot_items_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            add_points INTEGER,
+            weight INTEGER,
+            effect TEXT,
+            description TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bonus_quests_config (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            desc TEXT,
+            points_min INTEGER,
+            points_max INTEGER,
+            description TEXT
+        )
+    ''')
+
+    # 检查是否已经导入过
+    cursor.execute("SELECT COUNT(*) FROM tasks_config")
+    if cursor.fetchone()[0] > 0:
+        conn.close()
+        return
+
+    # 导入 tasks.json
+    if os.path.exists('tasks.json'):
+        with open('tasks.json', 'r', encoding='utf-8') as f:
+            tasks = json.load(f)
+        for task in tasks:
+            cursor.execute('''
+                INSERT OR REPLACE INTO tasks_config (id, name, monster_id, description, default_points, enabled, "order")
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (task['id'], task['name'], task['monster_id'], task.get('description', ''),
+                  task.get('points', 3), 1 if task.get('enabled', True) else 0, task.get('order', 999)))
+
+    # 导入 monsters.json
+    if os.path.exists('monsters.json'):
+        with open('monsters.json', 'r', encoding='utf-8') as f:
+            monsters = json.load(f)
+        for monster in monsters:
+            cursor.execute('''
+                INSERT OR REPLACE INTO monsters_config (id, name, icon, default_points, description)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (monster['id'], monster['name'], monster.get('icon', '👾'),
+                  monster.get('default_points', 1), monster.get('description', '')))
+
+    # 导入 shop_items.json
+    if os.path.exists('shop_items.json'):
+        with open('shop_items.json', 'r', encoding='utf-8') as f:
+            shop_items = json.load(f)
+        for item in shop_items:
+            cursor.execute('''
+                INSERT OR REPLACE INTO shop_items_config (id, name, price, icon, type, weekly_limit, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (item['id'], item['name'], item['price'], item.get('icon', '🎁'),
+                  item.get('type', 'normal'), item.get('weekly_limit'), item.get('description', '')))
+
+    # 导入 loot_table.json
+    if os.path.exists('loot_table.json'):
+        with open('loot_table.json', 'r', encoding='utf-8') as f:
+            loot_items = json.load(f)
+        for idx, item in enumerate(loot_items):
+            cursor.execute('''
+                INSERT OR REPLACE INTO loot_items_config (id, name, add_points, weight, effect, description)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (idx + 1, item['name'], item.get('add_points', 0), item.get('weight', 1),
+                  item.get('effect', ''), item.get('description', '')))
+
+    # 导入 bonus_quests.json
+    if os.path.exists('bonus_quests.json'):
+        with open('bonus_quests.json', 'r', encoding='utf-8') as f:
+            bonus_quests = json.load(f)
+        for quest in bonus_quests:
+            cursor.execute('''
+                INSERT OR REPLACE INTO bonus_quests_config (id, name, desc, points_min, points_max, description)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (quest['id'], quest['name'], quest.get('desc', ''),
+                  quest.get('points_range', [1, 4])[0], quest.get('points_range', [1, 4])[1],
+                  quest.get('description', '')))
+
+    conn.commit()
+    conn.close()
+    print("✅ 已从JSON文件导入初始配置数据")
+
+# ========== 获取配置数据的函数 ==========
+
+def get_tasks() -> List[Dict]:
+    """从数据库获取任务列表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, monster_id, description, default_points, enabled, "order" FROM tasks_config ORDER BY "order"')
+    rows = cursor.fetchall()
+    conn.close()
+    return [{
+        'id': r[0], 'name': r[1], 'monster_id': r[2], 'description': r[3],
+        'points': r[4], 'enabled': bool(r[5]), 'order': r[6]
+    } for r in rows]
+
+def save_tasks(tasks: List[Dict]):
+    """保存任务列表到数据库"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # 清空现有数据
+    cursor.execute('DELETE FROM tasks_config')
+
+    # 插入新数据
+    for task in tasks:
+        cursor.execute('''
+            INSERT INTO tasks_config (id, name, monster_id, description, default_points, enabled, "order")
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (task['id'], task['name'], task['monster_id'], task.get('description', ''),
+              task.get('points', 3), 1 if task.get('enabled', True) else 0, task.get('order', 999)))
+
+    conn.commit()
+    conn.close()
+
+def get_monsters() -> List[Dict]:
+    """从数据库获取怪物列表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, icon, default_points, description FROM monsters_config')
+    rows = cursor.fetchall()
+    conn.close()
+    return [{
+        'id': r[0], 'name': r[1], 'icon': r[2], 'default_points': r[3], 'description': r[4]
+    } for r in rows]
+
+def save_monsters(monsters: List[Dict]):
+    """保存怪物列表到数据库"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('DELETE FROM monsters_config')
+
+    for monster in monsters:
+        cursor.execute('''
+            INSERT INTO monsters_config (id, name, icon, default_points, description)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (monster['id'], monster['name'], monster.get('icon', '👾'),
+              monster.get('default_points', 1), monster.get('description', '')))
+
+    conn.commit()
+    conn.close()
+
+def get_shop_items() -> List[Dict]:
+    """从数据库获取商品列表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, price, icon, type, weekly_limit, description FROM shop_items_config')
+    rows = cursor.fetchall()
+    conn.close()
+    return [{
+        'id': r[0], 'name': r[1], 'price': r[2], 'icon': r[3],
+        'type': r[4], 'weekly_limit': r[5], 'description': r[6]
+    } for r in rows]
+
+def get_loot_table() -> List[Dict]:
+    """从数据库获取掉落物品列表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT name, add_points, weight, effect, description FROM loot_items_config')
+    rows = cursor.fetchall()
+    conn.close()
+    return [{
+        'name': r[0], 'add_points': r[1], 'weight': r[2], 'effect': r[3], 'description': r[4]
+    } for r in rows]
+
+def get_bonus_quests_pool() -> List[Dict]:
+    """从数据库获取彩蛋任务池"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, desc, points_min, points_max, description FROM bonus_quests_config')
+    rows = cursor.fetchall()
+    conn.close()
+    return [{
+        'id': r[0], 'name': r[1], 'desc': r[2], 'points_range': [r[3], r[4]], 'description': r[5]
+    } for r in rows]
+
+# ========== 系统配置操作 ==========
+
+def get_config() -> Dict:
+    """获取系统配置"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # 创建配置表（如果不存在）
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+
+    # 读取配置
+    cursor.execute('SELECT key, value FROM system_config')
+    rows = cursor.fetchall()
+    conn.close()
+
+    # 默认配置
+    config = {
+        'admin_password': 'admin123',
+        'streak_rule': 'login',
+        'version': '2.0'
+    }
+
+    # 覆盖数据库中的配置
+    for row in rows:
+        key, value = row
+        if key == 'streak_rule':
+            config['streak_rule'] = value
+        elif key == 'admin_password':
+            config['admin_password'] = value
+        elif key == 'version':
+            config['version'] = value
+
+    return config
+
+def save_config(config: Dict):
+    """保存系统配置"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+
+    if 'streak_rule' in config:
+        cursor.execute('INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)',
+                       ('streak_rule', config['streak_rule']))
+    if 'admin_password' in config:
+        cursor.execute('INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)',
+                       ('admin_password', config['admin_password']))
+    if 'version' in config:
+        cursor.execute('INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)',
+                       ('version', config['version']))
+
+    conn.commit()
+    conn.close()
+
+# ========== 用户状态操作 ==========
+
+def get_or_create_user(child_id: str) -> Dict:
+    """获取或创建用户，返回用户状态"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    today = str(date.today())
+
+    cursor.execute('SELECT * FROM users WHERE child_id = ?', (child_id,))
+    row = cursor.fetchone()
+
+    if row is None:
+        cursor.execute('''
+            INSERT INTO users (child_id, points, streak, last_date, portal_used, treasure_taken_today)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (child_id, 0, 1, today, 0, 0))
+        conn.commit()
+        user_data = {
+            'points': 0,
+            'streak': 1,
+            'last_date': today,
+            'portal_used': False,
+            'treasure_taken_today': False
+        }
+    else:
+        user_data = {
+            'points': row[1],
+            'streak': row[2],
+            'last_date': row[3],
+            'portal_used': bool(row[4]),
+            'treasure_taken_today': bool(row[5])
+        }
+
+    conn.close()
+    return user_data
+
+def update_user(child_id: str, data: Dict):
+    """更新用户状态"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE users 
+        SET points = ?, streak = ?, last_date = ?, portal_used = ?, treasure_taken_today = ?
+        WHERE child_id = ?
+    ''', (data['points'], data['streak'], data['last_date'],
+          int(data.get('portal_used', False)),
+          int(data.get('treasure_taken_today', False)), child_id))
+    conn.commit()
+    conn.close()
+
+# ========== 任务完成记录 ==========
+
+def add_defeated_monster(child_id: str, task_id: str):
+    """记录完成的任务（今天）"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    today = str(date.today())
+    try:
+        cursor.execute('''
+            INSERT INTO daily_completed (child_id, task_id, date)
+            VALUES (?, ?, ?)
+        ''', (child_id, task_id, today))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        pass
+    conn.close()
+
+def get_defeated_monsters(child_id: str) -> List[str]:
+    """获取今天已完成的任务ID列表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    today = str(date.today())
+    cursor.execute('''
+        SELECT task_id FROM daily_completed 
+        WHERE child_id = ? AND date = ?
+    ''', (child_id, today))
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
+def clear_defeated_monsters(child_id: str):
+    """清除今天的任务完成记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    today = str(date.today())
+    cursor.execute('DELETE FROM daily_completed WHERE child_id = ? AND date = ?', (child_id, today))
+    conn.commit()
+    conn.close()
+
+# ========== 积分历史 ==========
+
+def add_points_record(child_id: str, source: str, change: int, description: str, total: int):
+    """添加积分变动记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO points_history (child_id, time, source, change, description, total)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (child_id, datetime.now().strftime('%m-%d %H:%M'), source, change, description, total))
+    conn.commit()
+    conn.close()
+
+def get_points_history(child_id: str, limit: int = 50) -> List[Dict]:
+    """获取积分历史"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT time, source, change, description, total 
+        FROM points_history 
+        WHERE child_id = ? 
+        ORDER BY id DESC 
+        LIMIT ?
+    ''', (child_id, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{'time': r[0], 'source': r[1], 'change': r[2], 'description': r[3], 'total': r[4]} for r in rows]
+
+# ========== 兑换历史 ==========
+
+def add_exchange_record(child_id: str, item_name: str, price: int):
+    """添加兑换记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO exchange_history (child_id, time, item_name, price)
+        VALUES (?, ?, ?, ?)
+    ''', (child_id, datetime.now().strftime('%H:%M'), item_name, price))
+    conn.commit()
+    conn.close()
+
+def get_exchange_history(child_id: str, limit: int = 20) -> List[Dict]:
+    """获取兑换历史"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT time, item_name, price 
+        FROM exchange_history 
+        WHERE child_id = ? 
+        ORDER BY id DESC 
+        LIMIT ?
+    ''', (child_id, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{'time': r[0], 'item_name': r[1], 'price': r[2]} for r in rows]
+
+# ========== 周限购 ==========
+
+def get_weekly_exchange_count(child_id: str, key: str) -> int:
+    """获取周限购已兑换次数"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT count FROM weekly_exchanges WHERE child_id = ? AND key = ?', (child_id, key))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def increment_weekly_exchange(child_id: str, key: str):
+    """增加周限购计数"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    current = get_weekly_exchange_count(child_id, key)
+    if current == 0:
+        cursor.execute('INSERT INTO weekly_exchanges (child_id, key, count) VALUES (?, ?, ?)', (child_id, key, 1))
+    else:
+        cursor.execute('UPDATE weekly_exchanges SET count = ? WHERE child_id = ? AND key = ?',
+                       (current + 1, child_id, key))
+    conn.commit()
+    conn.close()
+
+# ========== 彩蛋任务 ==========
+
+def save_bonus_quests(child_id: str, quests: List[Dict]):
+    """保存当天的彩蛋任务"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    today = str(date.today())
+    cursor.execute('''
+        INSERT OR REPLACE INTO bonus_quests (child_id, date, quest_data)
+        VALUES (?, ?, ?)
+    ''', (child_id, today, json.dumps(quests, ensure_ascii=False)))
+    conn.commit()
+    conn.close()
+
+def get_bonus_quests(child_id: str) -> Optional[List[Dict]]:
+    """获取当天的彩蛋任务"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    today = str(date.today())
+    cursor.execute('SELECT quest_data FROM bonus_quests WHERE child_id = ? AND date = ?', (child_id, today))
+    row = cursor.fetchone()
+    conn.close()
+    return json.loads(row[0]) if row else None
+
+def clear_bonus_quests(child_id: str):
+    """清除当天的彩蛋任务"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    today = str(date.today())
+    cursor.execute('DELETE FROM bonus_quests WHERE child_id = ? AND date = ?', (child_id, today))
+    conn.commit()
+    conn.close()
+
+# ========== 活跃计时器 ==========
+
+def save_active_timer(child_id: str, task_id: str, task_name: str, start_time: str):
+    """保存活跃计时器"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO active_timer (child_id, task_id, task_name, start_time)
+        VALUES (?, ?, ?, ?)
+    ''', (child_id, task_id, task_name, start_time))
+    conn.commit()
+    conn.close()
+
+def get_active_timer(child_id: str) -> Optional[Dict]:
+    """获取活跃计时器"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT task_id, task_name, start_time FROM active_timer WHERE child_id = ?', (child_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {'task_id': row[0], 'task_name': row[1], 'start_time': row[2]}
+    return None
+
+def clear_active_timer(child_id: str):
+    """清除活跃计时器"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM active_timer WHERE child_id = ?', (child_id,))
+    conn.commit()
+    conn.close()
+
+# ========== 统一获取/保存孩子状态 ==========
+
+def get_child_state(child_id: str) -> Dict:
+    """获取孩子的完整状态"""
+    user = get_or_create_user(child_id)
+
+    today = str(date.today())
+    if user['last_date'] != today:
+        user['last_date'] = today
+        user['portal_used'] = False
+        user['treasure_taken_today'] = False
+        update_user(child_id, user)
+        clear_defeated_monsters(child_id)
+        clear_bonus_quests(child_id)
+        clear_active_timer(child_id)
+
+    user = get_or_create_user(child_id)
+
+    state = {
+        'points': user['points'],
+        'streak': user['streak'],
+        'last_date': user['last_date'],
+        'portal_used': user['portal_used'],
+        'treasure_taken_today': user['treasure_taken_today'],
+        'defeated_monsters': get_defeated_monsters(child_id),
+        'exchange_history': get_exchange_history(child_id),
+        'points_history': get_points_history(child_id),
+        'bonus_quests': get_bonus_quests(child_id) or [],
+        'active_timer': get_active_timer(child_id),
+        'weekly_exchanges': {}
+    }
+    return state
+
+def update_child_state(child_id: str, state: Dict):
+    """保存孩子的完整状态"""
+    user_data = {
+        'points': state['points'],
+        'streak': state['streak'],
+        'last_date': state['last_date'],
+        'portal_used': state.get('portal_used', False),
+        'treasure_taken_today': state.get('treasure_taken_today', False)
+    }
+    update_user(child_id, user_data)
+
+    if state.get('bonus_quests'):
+        save_bonus_quests(child_id, state['bonus_quests'])
+    else:
+        clear_bonus_quests(child_id)
+
+    timer = state.get('active_timer')
+    if timer:
+        save_active_timer(child_id, timer['task_id'], timer['task_name'], timer['start_time'])
+    else:
+        clear_active_timer(child_id)
+
+# ========== 连胜更新 ==========
+
+def update_streak(child_id: str, new_streak: int):
+    """单独更新连胜天数"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET streak = ? WHERE child_id = ?', (new_streak, child_id))
+    conn.commit()
+    conn.close()
+
+# ========== 重置每日任务 ==========
+
+def reset_daily_tasks(child_id: str):
+    """重置每日任务"""
+    clear_defeated_monsters(child_id)
+    clear_bonus_quests(child_id)
+    clear_active_timer(child_id)
+
+    user = get_or_create_user(child_id)
+    user['portal_used'] = False
+    user['treasure_taken_today'] = False
+    update_user(child_id, user)
+
+# ========== 初始化数据库 ==========
+init_db()
+
+
+# ========== 商品管理 ==========
+
+def get_shop_items() -> List[Dict]:
+    """从数据库获取商品列表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shop_items_config (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            price INTEGER,
+            icon TEXT,
+            type TEXT,
+            weekly_limit INTEGER,
+            description TEXT
+        )
+    ''')
+
+    cursor.execute('SELECT id, name, price, icon, type, weekly_limit, description FROM shop_items_config ORDER BY id')
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [{
+        'id': r[0],
+        'name': r[1],
+        'price': r[2],
+        'icon': r[3],
+        'type': r[4],
+        'weekly_limit': r[5],
+        'description': r[6]
+    } for r in rows]
+
+
+def save_shop_items(items: List[Dict]):
+    """保存商品列表到数据库"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS shop_items_config (id INTEGER PRIMARY KEY, name TEXT, price INTEGER, icon TEXT, type TEXT, weekly_limit INTEGER, description TEXT)')
+    cursor.execute('DELETE FROM shop_items_config')
+
+    for item in items:
+        cursor.execute(
+            'INSERT INTO shop_items_config (id, name, price, icon, type, weekly_limit, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (item['id'], item['name'], item['price'], item.get('icon', '🎁'), item.get('type', 'normal'),
+             item.get('weekly_limit'), item.get('description', '')))
+
+    conn.commit()
+    conn.close()
+
+
+def add_shop_item(item: Dict) -> Dict:
+    items = get_shop_items()
+    max_id = max([i['id'] for i in items]) if items else 0
+    new_id = max_id + 1
+    new_item = {
+        'id': new_id,
+        'name': item.get('name', '新商品'),
+        'price': item.get('price', 10),
+        'icon': item.get('icon', '🎁'),
+        'type': item.get('type', 'normal'),
+        'weekly_limit': item.get('weekly_limit'),
+        'description': item.get('description', '')
+    }
+    items.append(new_item)
+    save_shop_items(items)
+    return new_item
+
+
+def update_shop_item(item_id: int, data: Dict):
+    items = get_shop_items()
+    for item in items:
+        if item['id'] == item_id:
+            item['name'] = data.get('name', item['name'])
+            item['price'] = data.get('price', item['price'])
+            item['icon'] = data.get('icon', item['icon'])
+            item['type'] = data.get('type', item['type'])
+            item['weekly_limit'] = data.get('weekly_limit')
+            item['description'] = data.get('description', item['description'])
+            break
+    save_shop_items(items)
+
+
+def delete_shop_item(item_id: int) -> bool:
+    items = get_shop_items()
+    new_items = [i for i in items if i['id'] != item_id]
+    if len(new_items) == len(items):
+        return False
+    save_shop_items(new_items)
+    return Trueimport random
+from datetime import datetime
+from utils.data import get_loot_table, get_bonus_quests_pool
+
+# 任务等级配置
+TASK_RANKS = {
+    'easy': {'range': (1, 4), 'tasks': ['起床', '物品归位', '晨间勇者']},
+    'medium': {'range': (2, 6), 'tasks': ['阅读', '复习', '阅读冒险', '知识复习']},
+    'hard': {'range': (3, 8), 'tasks': ['作业', '作业讨伐']}
+}
+
+
+def get_random_points_with_crit(base_min, base_max, crit_chance=0.2):
+    """获取随机积分，20%概率暴击翻倍"""
+    points = random.randint(base_min, base_max)
+    is_crit = random.random() < crit_chance
+    if is_crit:
+        points = points * 2
+    return points, is_crit
+
+
+def get_task_rank(task_name):
+    """根据任务名称判断难度等级"""
+    for rank, info in TASK_RANKS.items():
+        for keyword in info['tasks']:
+            if keyword in task_name:
+                return rank
+    return 'medium'
+
+
+def get_random_loot():
+    """获取随机掉落道具"""
+    loot_table = get_loot_table()
+    if not loot_table:
+        return {'name': '🍬 小糖果', 'add_points': 1, 'effect': '+1积分'}
+
+    pool = []
+    for item in loot_table:
+        name = item['name']
+        add_points = item['add_points']
+        weight = item['weight']
+        effect = item['effect']
+        for _ in range(weight):
+            pool.append((name, add_points, effect))
+    chosen = random.choice(pool)
+    return {'name': chosen[0], 'add_points': chosen[1], 'effect': chosen[2]}
+
+
+def generate_bonus_quests():
+    """生成随机彩蛋任务"""
+    bonus_pool = get_bonus_quests_pool()
+    if not bonus_pool:
+        return []
+
+    count = random.randint(2, 4)
+    selected = random.sample(bonus_pool, min(count, len(bonus_pool)))
+    return [{
+        'name': q['name'],
+        'desc': q['desc'],
+        'points_range': q['points_range'],
+        'completed': False,
+        'id': q['id']
+    } for q in selected]
+
+
+def is_weekend():
+    """判断今天是否是周末"""
+    today = datetime.today().weekday()
+    return today >= 5  # 5=周六, 6=周日
+
+
+def check_time_limit(task_name):
+    """
+    检查任务的时间限制
+    返回: (是否允许完成, 提示信息)
+    """
+    now = datetime.now()
+    current_hour = now.hour
+    current_minute = now.minute
+    current_time = current_hour * 60 + current_minute
+
+    # 起床：7:15前（7*60+15 = 435）
+    if "起床" in task_name:
+        if current_time > 435:
+            return False, "⏰ 起床任务需要在7:15前完成！明天请早点起～"
+        return True, ""
+
+    # 作业：19:30前（19*60+30 = 1170）
+    elif "作业" in task_name:
+        if current_time > 1170:
+            return False, "⏰ 作业需要在19:30前完成！明天记得早点写作业～"
+        return True, ""
+
+    # 其他任务无时间限制
+    else:
+        return True, ""
+
+
+# ========== 计时任务相关 ==========
+
+def calculate_reading_reward(minutes):
+    """
+    计算阅读/复习的积分奖励
+    返回: (基础分, 奖励分, 总积分, 奖励描述)
+    """
+    if minutes < 15:
+        return 0, 0, 0, "时长不足15分钟，无法完成"
+
+    # 基础积分 3-6分随机（中难度）
+    base_points = random.randint(3, 6)
+
+    # 超额奖励：超过30分钟后，每20分钟+3分
+    extra_points = 0
+    if minutes > 30:
+        extra_blocks = (minutes - 30) // 20
+        extra_points = extra_blocks * 3
+
+    total = base_points + extra_points
+
+    reward_desc = f"学习了{minutes}分钟"
+    if extra_points > 0:
+        reward_desc += f"，基础{base_points}分 + 超额{extra_points}分"
+
+    return base_points, extra_points, total, reward_desc
+
+
+# ========== 运动任务相关 ==========
+
+def calculate_sport_reward(minutes):
+    """
+    计算运动的积分奖励
+    参数: minutes - 运动分钟数
+    返回: (总积分, 积分描述)
+    """
+    if minutes < 10:
+        return 0, f"运动时长不足10分钟（{minutes}分钟），无法完成"
+
+    # 限制最多30分钟
+    if minutes > 30:
+        minutes = 30
+        extra_note = "（超过30分钟按30分钟计算）"
+    else:
+        extra_note = ""
+
+    # 计算积分：基础10分钟3分，之后每10分钟+2分
+    if minutes >= 30:
+        total = 7  # 3+2+2
+    elif minutes >= 20:
+        total = 5  # 3+2
+    else:
+        total = 3  # 3
+
+    return total, f"运动{minutes}分钟{extra_note}，获得{total}积分"
+
+
+def can_start_sport():
+    """
+    检查当前时间是否在 20:50 之前
+    返回: (是否允许开始, 提示信息)
+    """
+    now = datetime.now()
+    deadline = now.replace(hour=20, minute=50, second=0, microsecond=0)
+    if now > deadline:
+        return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
+    return True, ""
+
+
+# ========== 跳绳任务相关 ==========
+
+def calculate_jump_rope_reward(count):
+    """
+    计算跳绳任务的积分奖励
+    参数: count - 跳绳个数
+    返回: (总积分, 积分描述, 是否达标)
+    """
+    # 最低门槛 300 个
+    if count < 300:
+        return 0, f"跳绳不足300个（当前{count}个），还需继续努力！", False
+
+    # 限制最多 1000 个
+    original_count = count
+    if count > 1000:
+        count = 1000
+        limit_note = "（超过1000个按1000个计算）"
+    else:
+        limit_note = ""
+
+    # 基础积分 5-7 随机
+    import random
+    base_points = random.randint(5, 7)
+
+    # 超额奖励：超过300后，每多100个 +2 分
+    extra = 0
+    if count > 300:
+        extra_blocks = (count - 300) // 100
+        extra = extra_blocks * 2
+
+    total = base_points + extra
+
+    reward_desc = f"跳绳{original_count}个{limit_note}，基础{base_points}分 + 超额{extra}分"
+
+    return total, reward_desc, True
+
+
+def can_start_jump_rope():
+    """
+    检查当前时间是否在 20:50 之前
+    返回: (是否允许开始, 提示信息)
+    跳绳任务复用运动任务的时间限制
+    """
+    from datetime import datetime
+    now = datetime.now()
+    deadline = now.replace(hour=20, minute=50, second=0, microsecond=0)
+    if now > deadline:
+        return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
+    return True, ""
+// ========== 全局变量 ==========
+let tasksData = [];
+let defeatedIds = [];
+let portalAvailable = false;
+let currentTask = null;
+let activeTimerTaskId = null;
+
+// 任务类型判断
+function isTimerTask(taskName) {
+    return taskName.includes('复习') || taskName.includes('阅读') || taskName.includes('运动') || taskName.includes('跳绳');
+}
+
+function isJumpRopeTask(taskName) {
+    return taskName.includes('跳绳');
+}
+
+// 获取任务积分描述
+function getRewardDescription(task) {
+    const taskName = task.name;
+
+    if (taskName.includes('起床')) {
+        return `
+            <div class="reward-item"><span class="reward-label">🌅 早起奖励</span><span class="reward-value">1-4 积分</span></div>
+            <div class="reward-item"><span class="reward-label">⏰ 迟到奖励</span><span class="reward-value">1 积分</span></div>
+            <div class="reward-item"><span class="reward-label">✨ 魔法掉落</span><span class="reward-value">随机 +1~5 积分</span></div>
+            <div class="reward-item"><span class="reward-label">💥 暴击</span><span class="reward-value">20% 概率积分翻倍！</span></div>
+        `;
+    }
+
+    if (taskName.includes('跳绳')) {
+        return `
+            <div class="reward-item"><span class="reward-label">🏃‍♂️ 最低门槛</span><span class="reward-value">300个</span></div>
+            <div class="reward-item"><span class="reward-label">🎯 基础奖励</span><span class="reward-value">5-7 积分</span></div>
+            <div class="reward-item"><span class="reward-label">📈 超额奖励</span><span class="reward-value">每多100个 +2 积分</span></div>
+            <div class="reward-item"><span class="reward-label">✨ 魔法掉落</span><span class="reward-value">随机 +1~5 积分</span></div>
+            <div class="reward-item"><span class="reward-label">💥 暴击</span><span class="reward-value">20% 概率积分翻倍！</span></div>
+        `;
+    }
+
+    if (taskName.includes('运动')) {
+        return `
+            <div class="reward-item"><span class="reward-label">🏃 10分钟</span><span class="reward-value">3 积分</span></div>
+            <div class="reward-item"><span class="reward-label">🏃 20分钟</span><span class="reward-value">5 积分</span></div>
+            <div class="reward-item"><span class="reward-label">🏃 30分钟</span><span class="reward-value">7 积分</span></div>
+            <div class="reward-item"><span class="reward-label">✨ 魔法掉落</span><span class="reward-value">随机 +1~5 积分</span></div>
+            <div class="reward-item"><span class="reward-label">💥 暴击</span><span class="reward-value">20% 概率积分翻倍！</span></div>
+        `;
+    }
+
+    if (taskName.includes('阅读') || taskName.includes('复习')) {
+        return `
+            <div class="reward-item"><span class="reward-label">⏰ 基础条件</span><span class="reward-value">至少 15 分钟</span></div>
+            <div class="reward-item"><span class="reward-label">📖 基础积分</span><span class="reward-value">3-6 积分</span></div>
+            <div class="reward-item"><span class="reward-label">🎁 超额奖励</span><span class="reward-value">超过30分钟后，每20分钟+3分</span></div>
+            <div class="reward-item"><span class="reward-label">✨ 魔法掉落</span><span class="reward-value">随机 +1~5 积分</span></div>
+            <div class="reward-item"><span class="reward-label">💥 暴击</span><span class="reward-value">20% 概率积分翻倍！</span></div>
+        `;
+    }
+
+    return `
+        <div class="reward-item"><span class="reward-label">🎯 基础积分</span><span class="reward-value">${task.points || 3} 积分</span></div>
+        <div class="reward-item"><span class="reward-label">✨ 魔法掉落</span><span class="reward-value">随机 +1~5 积分</span></div>
+        <div class="reward-item"><span class="reward-label">💥 暴击</span><span class="reward-value">20% 概率积分翻倍！</span></div>
+    `;
+}
+
+// 更新跳绳进度
+function updateJumpProgress(count) {
+    const progressElem = document.getElementById('jumpProgress');
+    if (progressElem) {
+        let displayCount = Math.min(count, 1000);
+        progressElem.innerHTML = `📊 进度：${displayCount} / 1000 个`;
+        progressElem.style.color = count >= 300 ? '#44ff44' : '#ffaa44';
+    }
+}
+
+// 显示任务详情
+function showTaskDetail(task, monsterIcon, monsterName, isCompleted) {
+    currentTask = task;
+    document.getElementById('modalIcon').innerHTML = monsterIcon || '❓';
+    document.getElementById('modalTitle').innerHTML = `${monsterName} - ${task.name}`;
+    document.getElementById('modalDesc').innerHTML = task.description || '暂无详细描述';
+    document.getElementById('modalRewards').innerHTML = getRewardDescription(task);
+
+    const actionBtn = document.getElementById('modalActionBtn');
+    const timerSection = document.getElementById('modalTimerSection');
+    const jumpRopeSection = document.getElementById('jumpRopeSection');
+    const isTimer = isTimerTask(task.name);
+    const isJump = isJumpRopeTask(task.name);
+
+    if (jumpRopeSection) {
+        jumpRopeSection.style.display = 'none';
+        const jumpInput = document.getElementById('jumpCountInput');
+        if (jumpInput) {
+            jumpInput.value = '';
+            jumpInput.oninput = (e) => updateJumpProgress(parseInt(e.target.value) || 0);
+        }
+    }
+
+    if (isCompleted) {
+        actionBtn.innerHTML = '✅ 今日已完成';
+        actionBtn.disabled = true;
+        actionBtn.style.opacity = '0.6';
+        timerSection.style.display = 'none';
+        if (jumpRopeSection) jumpRopeSection.style.display = 'none';
+    } else {
+        actionBtn.disabled = false;
+        if (isTimer) {
+            if (isJump) {
+                actionBtn.innerHTML = '✅ 提交成绩';
+                actionBtn.style.display = 'flex';
+                timerSection.style.display = 'none';
+                if (jumpRopeSection) jumpRopeSection.style.display = 'block';
+                updateJumpProgress(0);
+            } else if (activeTimerTaskId === task.id) {
+                actionBtn.style.display = 'none';
+                timerSection.style.display = 'block';
+                if (jumpRopeSection) jumpRopeSection.style.display = 'none';
+            } else {
+                actionBtn.innerHTML = '⏰ 开始计时';
+                actionBtn.style.display = 'flex';
+                timerSection.style.display = 'none';
+                if (jumpRopeSection) jumpRopeSection.style.display = 'none';
+            }
+        } else {
+            actionBtn.innerHTML = '⚔️ 开始讨伐';
+            actionBtn.style.display = 'flex';
+            timerSection.style.display = 'none';
+            if (jumpRopeSection) jumpRopeSection.style.display = 'none';
+        }
+    }
+
+    document.getElementById('taskModal').classList.add('active');
+}
+
+function hideModal() {
+    document.getElementById('taskModal').classList.remove('active');
+    currentTask = null;
+}
+
+function showConfirm(message, onYes) {
+    const overlay = document.getElementById('confirmOverlay');
+    document.getElementById('confirmMessage').innerHTML = message;
+    const handleYes = () => {
+        overlay.classList.remove('active');
+        onYes();
+    };
+    const handleNo = () => overlay.classList.remove('active');
+    document.getElementById('confirmYesBtn').onclick = handleYes;
+    document.getElementById('confirmNoBtn').onclick = handleNo;
+    overlay.classList.add('active');
+}
+
+async function fightMonster(taskId) {
+    let resp = await fetch('/fight', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({task_id: taskId})
+    });
+    let data = await resp.json();
+    if (data.error) {
+        document.getElementById('lootDisplay').innerHTML = '⚠️ ' + data.error;
+        return false;
+    }
+    document.getElementById('lootDisplay').innerHTML = `⚔️ 击败 ${data.monster_name}！<br>🎁 获得 ${data.base_points} 积分 ✨ ${data.loot_effect || ''}`;
+    return true;
+}
+
+async function startTimerTask(taskId, taskName) {
+    let resp = await fetch('/start_timer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({task_id: taskId, task_name: taskName})
+    });
+    let data = await resp.json();
+    if (data.error) {
+        document.getElementById('lootDisplay').innerHTML = '⚠️ ' + data.error;
+        return false;
+    }
+    document.getElementById('lootDisplay').innerHTML = '⏰ ' + data.message;
+    activeTimerTaskId = taskId;
+    return true;
+}
+
+async function endTimerTask(taskName) {
+    let resp = await fetch('/end_timer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({task_name: taskName})
+    });
+    let data = await resp.json();
+    if (data.error) {
+        document.getElementById('lootDisplay').innerHTML = '⚠️ ' + data.error;
+        return false;
+    }
+    document.getElementById('lootDisplay').innerHTML = data.message;
+    activeTimerTaskId = null;
+    return true;
+}
+
+async function endJumpRopeTask(taskName, jumpCount) {
+    let resp = await fetch('/end_timer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({task_name: taskName, jump_count: jumpCount})
+    });
+    let data = await resp.json();
+    if (data.error) {
+        document.getElementById('lootDisplay').innerHTML = '⚠️ ' + data.error;
+        return false;
+    }
+    document.getElementById('lootDisplay').innerHTML = data.message;
+    activeTimerTaskId = null;
+    return true;
+}
+
+function bindModalActions() {
+    document.getElementById('modalCloseBtn').onclick = hideModal;
+    document.getElementById('modalEndTimerBtn').onclick = async () => {
+        if (!currentTask) return;
+        showConfirm(`确定结束「${currentTask.name}」吗？`, async () => {
+            if (await endTimerTask(currentTask.name)) {
+                hideModal();
+                await loadGameData();
+            } else hideModal();
+        });
+    };
+    document.getElementById('modalActionBtn').onclick = async () => {
+        if (!currentTask) return;
+        const isTimer = isTimerTask(currentTask.name);
+        const isJump = isJumpRopeTask(currentTask.name);
+        if (isTimer) {
+            if (isJump) {
+                let count = parseInt(document.getElementById('jumpCountInput').value);
+                if (isNaN(count) || count <= 0) { alert('请输入跳绳个数'); return; }
+                if (count < 300) { alert(`跳绳不足300个（当前${count}个），还需继续努力！`); return; }
+                showConfirm(`确认提交跳绳成绩 ${count} 个吗？`, async () => {
+                    if (await endJumpRopeTask(currentTask.name, count)) {
+                        hideModal();
+                        await loadGameData();
+                    } else hideModal();
+                });
+            } else if (activeTimerTaskId === currentTask.id) {
+                showConfirm(`确定结束「${currentTask.name}」吗？`, async () => {
+                    if (await endTimerTask(currentTask.name)) {
+                        hideModal();
+                        await loadGameData();
+                    } else hideModal();
+                });
+            } else {
+                showConfirm(`确定开始「${currentTask.name}」吗？`, async () => {
+                    if (await startTimerTask(currentTask.id, currentTask.name)) {
+                        hideModal();
+                        await loadGameData();
+                    } else hideModal();
+                });
+            }
+        } else {
+            showConfirm(`确定开始讨伐「${currentTask.name}」吗？`, async () => {
+                if (await fightMonster(currentTask.id)) {
+                    hideModal();
+                    await loadGameData();
+                } else hideModal();
+            });
+        }
+    };
+}
+
+async function renderMap() {
+    const container = document.getElementById('taskNodes');
+    container.innerHTML = '';
+    const total = tasksData.length;
+    document.getElementById('totalTasks').innerText = total;
+    const completedCount = defeatedIds.length;
+    document.getElementById('progressCount').innerText = completedCount;
+    document.getElementById('progressFill').style.width = (completedCount / total) * 100 + '%';
+
+    let monsterMap = {};
+    try {
+        let resp = await fetch('/monsters_map');
+        monsterMap = await resp.json();
+    } catch(e) {}
+
+    for (let idx = 0; idx < tasksData.length; idx++) {
+        const task = tasksData[idx];
+        const isCompleted = defeatedIds.includes(task.id);
+        const monsterIcon = monsterMap[task.id] || '❓';
+        const node = document.createElement('div');
+        node.className = `node-card ${isCompleted ? 'completed' : ''}`;
+        node.onclick = () => {
+            if (!isCompleted) {
+                fetch('/task_detail/' + task.id).then(res => res.json()).then(detail => {
+                    showTaskDetail(detail, monsterIcon, detail.monster_name || '怪物', isCompleted);
+                }).catch(() => {
+                    showTaskDetail({id: task.id, name: task.name, description: task.description || '', points: 3}, monsterIcon, '怪物', isCompleted);
+                });
+            }
+        };
+        node.innerHTML = `<div class="node-icon">${monsterIcon}</div><div class="node-name">${task.name}</div><div class="node-points">💰 ${getPointsHint(task.name)}</div><div class="node-status">${isCompleted ? '✅ 已完成' : '⚔️ 可讨伐'}</div>`;
+        container.appendChild(node);
+        if (idx !== tasksData.length - 1) {
+            const line = document.createElement('span');
+            line.className = 'connector-line';
+            line.innerHTML = ' → ';
+            container.appendChild(line);
+        }
+    }
+    if (!portalAvailable && completedCount >= Math.ceil(total * 0.8)) {
+        portalAvailable = true;
+        document.getElementById('portalArea').innerHTML = `<div class="node-card portal-card" style="display:inline-block; padding:12px 30px;" onclick="openPortal()">🌀 神秘传送门 🌀<br>✨ 点击进入异界 ✨</div>`;
+    }
+}
+
+function getPointsHint(taskName) {
+    if (taskName.includes('起床')) return '1~4';
+    if (taskName.includes('跳绳')) return '5~7+';
+    if (taskName.includes('运动')) return '3~7';
+    if (taskName.includes('阅读') || taskName.includes('复习')) return '3~6+';
+    return '2~8';
+}
+
+async function openPortal() {
+    let resp = await fetch('/portal', {method: 'POST'});
+    let data = await resp.json();
+    if (data.status === 'ok') alert('✨ 你进入了秘境，获得了彩蛋任务！✨');
+    else alert(data.error);
+    location.reload();
+}
+
+async function openTreasure() {
+    let resp = await fetch('/treasure', {method: 'POST'});
+    let data = await resp.json();
+    if (data.error) alert(data.error);
+    else alert(data.loot_info);
+    location.reload();
+}
+
+function checkFullClear() {
+    if (defeatedIds.length === tasksData.length && tasksData.length > 0) {
+        document.getElementById('treasureArea').style.display = 'block';
+    } else {
+        document.getElementById('treasureArea').style.display = 'none';
+    }
+}
+
+function switchTab(tab) {
+    if (tab === 'shop') window.location.href = '/shop';
+    if (tab === 'points') window.location.href = '/points';
+    if (tab === 'quest') window.location.reload();
+}
+
+async function loadGameData() {
+    let status = await (await fetch('/status')).json();
+    document.getElementById('pointsDisplay').innerText = status.points;
+    document.getElementById('streakDisplay').innerText = status.streak;
+    let tasksJson = await (await fetch('/tasks_list')).json();
+    tasksData = tasksJson.tasks;
+    defeatedIds = tasksJson.completed_ids || [];
+    let timerRes = await fetch('/active_timer_status');
+    if (timerRes.ok) {
+        let timerData = await timerRes.json();
+        activeTimerTaskId = timerData.active ? timerData.task_id : null;
+    }
+    await renderMap();
+    checkFullClear();
+}
+
+bindModalActions();
+loadGameData();
+// ========== 管理后台专用 JavaScript ==========
+
+let monstersData = [];
+let currentTaskId = null;
+let currentShopId = null;
+let currentPointsAction = null;
+
+// ========== 通用加载 ==========
+async function adminLoadData() {
+    let resp = await fetch('/admin/data');
+    let data = await resp.json();
+    renderTaskList(data.tasks);
+    monstersData = data.monsters;
+    renderMonsterList(monstersData);
+    updateMonsterSelect();
+    document.getElementById('streakRuleSelect').value = data.config.streak_rule || 'login';
+    await loadShopItems();
+}
+
+function updateMonsterSelect() {
+    const select = document.getElementById('editMonsterId');
+    if (!select) return;
+    select.innerHTML = '<option value="">-- 请选择怪物 --</option>';
+    for (let monster of monstersData) {
+        select.innerHTML += `<option value="${monster.id}">${monster.icon} ${monster.name}</option>`;
+    }
+}
+
+// ========== 任务管理 ==========
+function renderTaskList(tasks) {
+    const container = document.getElementById('taskList');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let task of tasks) {
+        const div = document.createElement('div');
+        div.className = 'task-item';
+        div.innerHTML = `
+            <div class="task-info">
+                <div class="task-name">${escapeHtml(task.name)} ${task.enabled ? '✅' : '⛔'}</div>
+                <div class="task-desc">${escapeHtml(task.description || '无描述')}</div>
+                <div class="task-meta">💰 ${task.points}分 | 排序: ${task.order} | 怪物ID: ${escapeHtml(task.monster_id)}</div>
+            </div>
+            <div class="task-actions">
+                <button class="success" onclick="adminEditTask('${task.id}')">✏️ 编辑</button>
+                <button class="danger" onclick="adminDeleteTask('${task.id}')">🗑️ 删除</button>
+            </div>
+        `;
+        container.appendChild(div);
+    }
+}
+
+function adminShowAddTaskModal() {
+    currentTaskId = null;
+    document.getElementById('taskModalTitle').innerHTML = '➕ 添加新任务';
+    document.getElementById('editTaskId').value = '';
+    document.getElementById('editTaskName').value = '';
+    document.getElementById('editMonsterId').value = '';
+    document.getElementById('editTaskPoints').value = '3';
+    document.getElementById('editTaskOrder').value = '999';
+    document.getElementById('editTaskDesc').value = '';
+    document.getElementById('editTaskEnabled').checked = true;
+    showModal('taskModal');
+}
+
+async function adminEditTask(taskId) {
+    currentTaskId = taskId;
+    let resp = await fetch(`/admin/task/${taskId}`);
+    let task = await resp.json();
+    document.getElementById('taskModalTitle').innerHTML = `✏️ 编辑任务 - ${escapeHtml(task.name)}`;
+    document.getElementById('editTaskId').value = task.id;
+    document.getElementById('editTaskName').value = task.name;
+    document.getElementById('editMonsterId').value = task.monster_id;
+    document.getElementById('editTaskPoints').value = task.points;
+    document.getElementById('editTaskOrder').value = task.order || 999;
+    document.getElementById('editTaskDesc').value = task.description || '';
+    document.getElementById('editTaskEnabled').checked = task.enabled !== false;
+    showModal('taskModal');
+}
+
+function hideTaskModal() {
+    hideModal('taskModal');
+}
+
+async function saveTask() {
+    const taskId = document.getElementById('editTaskId').value;
+    const data = {
+        name: document.getElementById('editTaskName').value.trim(),
+        monster_id: document.getElementById('editMonsterId').value,
+        points: parseInt(document.getElementById('editTaskPoints').value),
+        order: parseInt(document.getElementById('editTaskOrder').value),
+        description: document.getElementById('editTaskDesc').value,
+        enabled: document.getElementById('editTaskEnabled').checked
+    };
+    if (!data.name) { alert('请填写任务名称'); return; }
+    if (!data.monster_id) { alert('请选择怪物'); return; }
+    if (isNaN(data.points) || data.points < 0) { alert('积分必须为正数'); return; }
+    let url = taskId ? '/admin/update_task' : '/admin/add_task';
+    if (taskId) data.task_id = taskId;
+    let resp = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+    let result = await resp.json();
+    if (result.status === 'ok') {
+        hideTaskModal();
+        adminLoadData();
+    } else {
+        alert('保存失败');
+    }
+}
+
+async function adminDeleteTask(taskId) {
+    if (!confirm('确定删除此任务？')) return;
+    let resp = await fetch('/admin/delete_task', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({task_id: taskId})
+    });
+    let result = await resp.json();
+    if (result.status === 'ok') adminLoadData();
+    else alert('删除失败');
+}
+
+// ========== 怪物管理 ==========
+function renderMonsterList(monsters) {
+    const container = document.getElementById('monsterList');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let monster of monsters) {
+        const div = document.createElement('div');
+        div.className = 'monster-item';
+        div.innerHTML = `
+            <div class="monster-info">
+                <div class="monster-name">${escapeHtml(monster.icon)} ${escapeHtml(monster.name)}</div>
+                <div class="monster-desc">${escapeHtml(monster.description || '')}</div>
+                <div class="monster-meta">默认积分: ${monster.default_points}</div>
+            </div>
+            <div class="monster-actions">
+                <button class="success" onclick="adminEditMonster('${monster.id}')">✏️ 编辑</button>
+                <button class="danger" onclick="adminDeleteMonster('${monster.id}')">🗑️ 删除</button>
+            </div>
+        `;
+        container.appendChild(div);
+    }
+}
+
+function adminShowAddMonsterForm() {
+    document.getElementById('addMonsterForm').style.display = 'block';
+}
+
+function adminHideAddMonsterForm() {
+    document.getElementById('addMonsterForm').style.display = 'none';
+    document.getElementById('newMonsterName').value = '';
+    document.getElementById('newMonsterIcon').value = '👾';
+    document.getElementById('newMonsterPoints').value = '2';
+    document.getElementById('newMonsterDesc').value = '';
+}
+
+async function adminAddMonster() {
+    let data = {
+        name: document.getElementById('newMonsterName').value,
+        icon: document.getElementById('newMonsterIcon').value,
+        default_points: parseInt(document.getElementById('newMonsterPoints').value),
+        description: document.getElementById('newMonsterDesc').value
+    };
+    if (!data.name) { alert('请输入怪物名称'); return; }
+    let resp = await fetch('/admin/add_monster', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+    let result = await resp.json();
+    if (result.status === 'ok') {
+        adminHideAddMonsterForm();
+        adminLoadData();
+    } else alert('添加失败');
+}
+
+async function adminEditMonster(monsterId) {
+    let newName = prompt('输入新名称');
+    if (!newName) return;
+    await fetch('/admin/update_monster', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({monster_id: monsterId, name: newName, icon: '👾', default_points: 1, description: ''})
+    });
+    adminLoadData();
+}
+
+async function adminDeleteMonster(monsterId) {
+    if (!confirm('确定删除？')) return;
+    await fetch('/admin/delete_monster', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({monster_id: monsterId})
+    });
+    adminLoadData();
+}
+
+// ========== 商品管理 ==========
+async function loadShopItems() {
+    let resp = await fetch('/admin/shop_items');
+    let items = await resp.json();
+    renderShopList(items);
+}
+
+function renderShopList(items) {
+    const container = document.getElementById('shopList');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let item of items) {
+        const div = document.createElement('div');
+        div.className = 'shop-item';
+        div.innerHTML = `
+            <div class="shop-info">
+                <div class="shop-name">${escapeHtml(item.icon)} ${escapeHtml(item.name)}</div>
+                <div class="shop-desc">${escapeHtml(item.description || '')}</div>
+                <div class="shop-meta">💰 ${item.price}分 | 类型: ${item.type === 'weekend_only' ? '仅限周末' : '普通'} | 周限购: ${item.weekly_limit || '不限'}</div>
+            </div>
+            <div class="shop-actions">
+                <button class="success" onclick="adminEditShop(${item.id})">✏️ 编辑</button>
+                <button class="danger" onclick="adminDeleteShop(${item.id})">🗑️ 删除</button>
+            </div>
+        `;
+        container.appendChild(div);
+    }
+}
+
+function adminShowAddShopModal() {
+    currentShopId = null;
+    document.getElementById('shopModalTitle').innerHTML = '➕ 添加新商品';
+    document.getElementById('editShopId').value = '';
+    document.getElementById('editShopName').value = '';
+    document.getElementById('editShopIcon').value = '🎁';
+    document.getElementById('editShopPrice').value = '10';
+    document.getElementById('editShopType').value = 'normal';
+    document.getElementById('editShopWeeklyLimit').value = '';
+    document.getElementById('editShopDesc').value = '';
+    showModal('shopModal');
+}
+
+async function adminEditShop(itemId) {
+    currentShopId = itemId;
+    let resp = await fetch(`/admin/shop_item/${itemId}`);
+    let item = await resp.json();
+    document.getElementById('shopModalTitle').innerHTML = `✏️ 编辑商品 - ${escapeHtml(item.name)}`;
+    document.getElementById('editShopId').value = item.id;
+    document.getElementById('editShopName').value = item.name;
+    document.getElementById('editShopIcon').value = item.icon || '🎁';
+    document.getElementById('editShopPrice').value = item.price;
+    document.getElementById('editShopType').value = item.type || 'normal';
+    document.getElementById('editShopWeeklyLimit').value = item.weekly_limit || '';
+    document.getElementById('editShopDesc').value = item.description || '';
+    showModal('shopModal');
+}
+
+function hideShopModal() {
+    hideModal('shopModal');
+}
+
+async function saveShop() {
+    const itemId = document.getElementById('editShopId').value;
+    const weeklyLimit = document.getElementById('editShopWeeklyLimit').value;
+    const data = {
+        name: document.getElementById('editShopName').value.trim(),
+        icon: document.getElementById('editShopIcon').value,
+        price: parseInt(document.getElementById('editShopPrice').value),
+        type: document.getElementById('editShopType').value,
+        weekly_limit: weeklyLimit ? parseInt(weeklyLimit) : null,
+        description: document.getElementById('editShopDesc').value
+    };
+    if (!data.name) { alert('请输入商品名称'); return; }
+    if (isNaN(data.price) || data.price < 0) { alert('价格必须为正数'); return; }
+    let url = itemId ? '/admin/update_shop_item' : '/admin/add_shop_item';
+    if (itemId) data.id = parseInt(itemId);
+    let resp = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+    let result = await resp.json();
+    if (result.status === 'ok') {
+        hideShopModal();
+        adminLoadData();
+    } else {
+        alert('保存失败');
+    }
+}
+
+async function adminDeleteShop(itemId) {
+    if (!confirm('确定删除此商品？')) return;
+    let resp = await fetch('/admin/delete_shop_item', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: itemId})
+    });
+    let result = await resp.json();
+    if (result.status === 'ok') adminLoadData();
+    else alert('删除失败');
+}
+
+// ========== 系统设置 ==========
+async function adminSaveSystemConfig() {
+    let streakRule = document.getElementById('streakRuleSelect').value;
+    await fetch('/admin/update_config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({streak_rule: streakRule})
+    });
+    alert('保存成功');
+}
+
+async function adminResetStreak() {
+    if (!confirm('重置连胜天数？')) return;
+    await fetch('/admin/reset_streak', {method: 'POST'});
+    alert('已重置');
+}
+
+async function adminResetChildDay() {
+    if (!confirm('重置今日任务进度？')) return;
+    await fetch('/admin/reset_child_day', {method: 'POST'});
+    alert('已重置');
+}
+
+async function adminResetAllData() {
+    if (!confirm('⚠️ 重置所有数据？不可恢复！')) return;
+    await fetch('/admin/reset_all_data', {method: 'POST'});
+    location.reload();
+}
+
+async function adminLogout() {
+    window.location.href = '/logout';
+}
+
+// ========== 积分调整 ==========
+async function loadCurrentPoints() {
+    let resp = await fetch('/status');
+    let data = await resp.json();
+    const pointsSpan = document.getElementById('currentPoints');
+    if (pointsSpan) pointsSpan.innerText = data.points;
+}
+
+function showAddPointsModal() {
+    currentPointsAction = 'add';
+    document.getElementById('pointsModalTitle').innerHTML = '➕ 增加积分';
+    document.getElementById('pointsAmount').value = '';
+    document.getElementById('pointsReason').value = '';
+    showModal('pointsModal');
+}
+
+function showDeductPointsModal() {
+    currentPointsAction = 'deduct';
+    document.getElementById('pointsModalTitle').innerHTML = '➖ 扣除积分';
+    document.getElementById('pointsAmount').value = '';
+    document.getElementById('pointsReason').value = '';
+    showModal('pointsModal');
+}
+
+function hidePointsModal() {
+    hideModal('pointsModal');
+}
+
+async function submitAdjustPoints() {
+    let amount = parseInt(document.getElementById('pointsAmount').value);
+    let reason = document.getElementById('pointsReason').value.trim() || (currentPointsAction === 'add' ? '手动增加积分' : '手动扣除积分');
+    if (isNaN(amount) || amount <= 0) { alert('请输入有效数量'); return; }
+    let finalAmount = currentPointsAction === 'add' ? amount : -amount;
+    if (!confirm(`确认${currentPointsAction === 'add' ? '增加' : '扣除'} ${amount} 积分？`)) return;
+    let resp = await fetch('/admin/adjust_points', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({amount: finalAmount, reason: reason})
+    });
+    let data = await resp.json();
+    if (data.error) alert(data.error);
+    else {
+        alert(data.message);
+        loadCurrentPoints();
+        adminLoadData();
+    }
+}
+
+// ========== 弹窗辅助函数 ==========
+function showModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.style.visibility = 'visible';
+        modal.style.opacity = '1';
+    }
+}
+
+function hideModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'none';
+        modal.style.visibility = 'hidden';
+        modal.style.opacity = '0';
+    }
+}
+
+// 折叠面板功能
+function toggleCollapse(sectionId) {
+    const content = document.getElementById(sectionId);
+    const arrow = document.getElementById(sectionId + 'Arrow');
+    if (!content || !arrow) return;
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        arrow.innerHTML = '▼';
+    } else {
+        content.style.display = 'none';
+        arrow.innerHTML = '▶';
+    }
+}
+
+// 点击弹窗外部关闭
+document.getElementById('taskModal')?.addEventListener('click', function(e) {
+    if (e.target === this) hideTaskModal();
+});
+document.getElementById('shopModal')?.addEventListener('click', function(e) {
+    if (e.target === this) hideShopModal();
+});
+document.getElementById('pointsModal')?.addEventListener('click', function(e) {
+    if (e.target === this) hidePointsModal();
+});
+
+// 绑定按钮事件
+document.getElementById('taskSaveBtn')?.addEventListener('click', saveTask);
+document.getElementById('taskCancelBtn')?.addEventListener('click', hideTaskModal);
+document.getElementById('shopSaveBtn')?.addEventListener('click', saveShop);
+document.getElementById('shopCancelBtn')?.addEventListener('click', hideShopModal);
+document.getElementById('pointsConfirmBtn')?.addEventListener('click', submitAdjustPoints);
+document.getElementById('pointsCancelBtn')?.addEventListener('click', hidePointsModal);
+
+// HTML转义函数
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// 初始化
+adminLoadData();
+loadCurrentPoints();

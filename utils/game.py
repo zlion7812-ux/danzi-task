@@ -163,3 +163,54 @@ def can_start_sport():
     if now > deadline:
         return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
     return True, ""
+
+
+# ========== 跳绳任务相关 ==========
+
+def calculate_jump_rope_reward(count):
+    """
+    计算跳绳任务的积分奖励
+    参数: count - 跳绳个数
+    返回: (总积分, 积分描述, 是否达标)
+    """
+    # 最低门槛 300 个
+    if count < 300:
+        return 0, f"跳绳不足300个（当前{count}个），还需继续努力！", False
+
+    # 限制最多 1000 个
+    original_count = count
+    if count > 1000:
+        count = 1000
+        limit_note = "（超过1000个按1000个计算）"
+    else:
+        limit_note = ""
+
+    # 基础积分 5-7 随机
+    import random
+    base_points = random.randint(5, 7)
+
+    # 超额奖励：超过300后，每多100个 +2 分
+    extra = 0
+    if count > 300:
+        extra_blocks = (count - 300) // 100
+        extra = extra_blocks * 2
+
+    total = base_points + extra
+
+    reward_desc = f"跳绳{original_count}个{limit_note}，基础{base_points}分 + 超额{extra}分"
+
+    return total, reward_desc, True
+
+
+def can_start_jump_rope():
+    """
+    检查当前时间是否在 20:50 之前
+    返回: (是否允许开始, 提示信息)
+    跳绳任务复用运动任务的时间限制
+    """
+    from datetime import datetime
+    now = datetime.now()
+    deadline = now.replace(hour=20, minute=50, second=0, microsecond=0)
+    if now > deadline:
+        return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
+    return True, ""

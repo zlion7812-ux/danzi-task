@@ -1,0 +1,349 @@
+=== CONFIG ===
+[
+    {
+        "id": "task_1",
+        "monster_id": "mon_1",
+        "name": "起床",
+        "description": "🌅 晨间勇者\n\n• 7:15前自己穿好衣服\n• 叠好被子\n• 完成后请妈妈确认",
+        "points": 3,
+        "enabled": true,
+        "order": 1
+    },
+    {
+        "id": "task_2",
+        "monster_id": "mon_7",
+        "name": "作业",
+        "description": "📚 作业讨伐\n\n• 19:30前完成学校作业\n• 字迹工整，正确率达标\n• 如果没有作业，自动转为复习时间",
+        "points": 5,
+        "enabled": true,
+        "order": 2
+    },
+    {
+        "id": "task_3",
+        "monster_id": "mon_6",
+        "name": "复习",
+        "description": "📖 知识复习\n\n• 19:30-20:30 复习语文和数学\n• 妈妈会抽查提问\n• 如果当天没有新内容，改为预习明天课程",
+        "points": 4,
+        "enabled": true,
+        "order": 3
+    },
+    {
+        "id": "task_4",
+        "monster_id": "mon_3",
+        "name": "物品归位",
+        "description": "🎒 物品归位\n\n• 作业和复习都完成后才做\n• 桌面杂物清理干净\n• 书本放回原位\n• 书包拉好拉链\n• 检查明天要带的物品",
+        "points": 3,
+        "enabled": true,
+        "order": 4
+    },
+    {
+        "id": "task_5",
+        "monster_id": "mon_8",
+        "name": "阅读",
+        "description": "🐉 阅读冒险\n\n• 当天完成15-30分钟阅读\n• 读完后来找妈妈，讲一讲故事内容\n• 💥超额奖励：每多读20分钟+3分",
+        "points": 3,
+        "enabled": true,
+        "order": 5
+    },
+    {
+        "id": "task_6",
+        "monster_id": "mon_13",
+        "name": "运动健身",
+        "description": "💪 活力运动！\n\n• 20:50 前开始运动\n• 最少运动10分钟\n• 10分钟=3分，20分钟=5分，30分钟=7分\n• 当天最多30分钟",
+        "points": 3,
+        "enabled": true,
+        "order": 6
+    }
+][
+    {
+        "id": "mon_1",
+        "name": "小野猪",
+        "icon": "🐗",
+        "default_points": 1,
+        "description": "弱小的野兽，起床气的化身"
+    },
+    {
+        "id": "mon_2",
+        "name": "蘑菇怪",
+        "icon": "🍄",
+        "default_points": 1,
+        "description": "挡路的毒蘑菇，让人磨蹭的坏蛋"
+    },
+    {
+        "id": "mon_3",
+        "name": "狗头人",
+        "icon": "🧙",
+        "default_points": 2,
+        "description": "狡猾的洞穴居民，偷时间的盗贼"
+    },
+    {
+        "id": "mon_4",
+        "name": "巨型蜘蛛",
+        "icon": "🕷️",
+        "default_points": 2,
+        "description": "织网的掠食者，拖延的化身"
+    },
+    {
+        "id": "mon_5",
+        "name": "影牙狼",
+        "icon": "🐺",
+        "default_points": 2,
+        "description": "嗜血的猎手，分心的根源"
+    },
+    {
+        "id": "mon_6",
+        "name": "鱼人",
+        "icon": "🧌",
+        "default_points": 2,
+        "description": "沼泽中的麻烦精，干扰学习的捣蛋鬼"
+    },
+    {
+        "id": "mon_7",
+        "name": "骷髅战士",
+        "icon": "💀",
+        "default_points": 3,
+        "description": "亡灵大军的一员，作业的克星"
+    },
+    {
+        "id": "mon_8",
+        "name": "雏龙",
+        "icon": "🐉",
+        "default_points": 3,
+        "description": "幼小的龙族，阅读的守护者"
+    },
+    {
+        "id": "mon_9",
+        "name": "血色战士",
+        "icon": "⚔️",
+        "default_points": 3,
+        "description": "狂热的十字军，复习路上的阻碍"
+    },
+    {
+        "id": "mon_10",
+        "name": "石像鬼",
+        "icon": "🦇",
+        "default_points": 3,
+        "description": "远古的守护者，专注力的考验"
+    },
+    {
+        "id": "mon_11",
+        "name": "食人魔",
+        "icon": "👹",
+        "default_points": 3,
+        "description": "笨重的巨魔，自律的挑战"
+    },
+    {
+        "id": "mon_12",
+        "name": "炎魔",
+        "icon": "🔥",
+        "default_points": 4,
+        "description": "烈焰领主，终极BOSS"
+    },
+    {
+        "id": "mon_13",
+        "name": "肌肉兽",
+        "icon": "💪",
+        "default_points": 3,
+        "description": "懒惰的克星，爱运动的守护者"
+    }
+
+][
+    {
+        "id": 1,
+        "name": "🍬 小零食一份",
+        "price": 15,
+        "icon": "🍬",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "小零食奖励"
+    },
+    {
+        "id": 2,
+        "name": "🎮 玩蛋仔派对15分钟",
+        "price": 40,
+        "icon": "🎮",
+        "type": "weekend_only",
+        "weekly_limit": 2,
+        "description": "只能在周末使用"
+    },
+    {
+        "id": 3,
+        "name": "🎮 玩蛋仔派对30分钟",
+        "price": 70,
+        "icon": "🎮",
+        "type": "weekend_only",
+        "weekly_limit": 2,
+        "description": "只能在周末使用"
+    },
+    {
+        "id": 4,
+        "name": "🧸 玩具一份",
+        "price": 200,
+        "icon": "🧸",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "实物奖励"
+    },
+    {
+        "id": 5,
+        "name": "🍦 吃冰淇淋",
+        "price": 25,
+        "icon": "🍦",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "周末享用"
+    },
+    {
+        "id": 6,
+        "name": "⭐ 免做一次任务卡",
+        "price": 150,
+        "icon": "⭐",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "可免做一次任务"
+    },
+    {
+        "id": 7,
+        "name": "🎬 全家一起看电影",
+        "price": 300,
+        "icon": "🎬",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "家庭观影时间"
+    },
+    {
+        "id": 8,
+        "name": "📺 多看15分钟动画",
+        "price": 35,
+        "icon": "📺",
+        "type": "weekend_only",
+        "weekly_limit": 2,
+        "description": "只能在周末使用"
+    },
+    {
+        "id": 9,
+        "name": "🛏️ 周末晚起30分钟",
+        "price": 15,
+        "icon": "🛏️",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "周末可以晚起"
+    },
+    {
+        "id": 10,
+        "name": "🍎 决定今晚吃什么水果",
+        "price": 15,
+        "icon": "🍎",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "小决策权"
+    },
+    {
+        "id": 11,
+        "name": "🎲 爸爸陪玩桌游15分钟",
+        "price": 35,
+        "icon": "🎲",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "亲子时间"
+    },
+    {
+        "id": 12,
+        "name": "🎁 神秘盲盒（实物）",
+        "price": 350,
+        "icon": "🎁",
+        "type": "normal",
+        "weekly_limit": null,
+        "description": "随机小玩具"
+    }
+][
+    {
+        "name": "🍬 小糖果",
+        "add_points": 1,
+        "weight": 40,
+        "effect": "+1积分",
+        "description": "普通掉落"
+    },
+    {
+        "name": "🎒 免整理卡",
+        "add_points": 0,
+        "weight": 20,
+        "effect": "下次免做物品归位",
+        "description": "功能道具"
+    },
+    {
+        "name": "⭐ 星星碎片",
+        "add_points": 2,
+        "weight": 20,
+        "effect": "+2积分",
+        "description": "普通掉落"
+    },
+    {
+        "name": "📺 动画券",
+        "add_points": 0,
+        "weight": 10,
+        "effect": "周末多看10分钟动画",
+        "description": "功能道具"
+    },
+    {
+        "name": "🎁 神秘盲盒",
+        "add_points": 3,
+        "weight": 5,
+        "effect": "+3积分",
+        "description": "稀有掉落"
+    },
+    {
+        "name": "🏆 传说蛋仔皮肤",
+        "add_points": 5,
+        "weight": 3,
+        "effect": "+5积分",
+        "description": "传说掉落"
+    }
+][
+    {
+        "id": "b1",
+        "name": "💖 爱的拥抱",
+        "desc": "给妈妈一个拥抱",
+        "points_range": [1, 4],
+        "description": "表达爱意的小任务"
+    },
+    {
+        "id": "b2",
+        "name": "💧 生命之水",
+        "desc": "喝完一整杯水",
+        "points_range": [1, 4],
+        "description": "健康小习惯"
+    },
+    {
+        "id": "b3",
+        "name": "🎨 小小画家",
+        "desc": "画一幅蛋仔相关的画",
+        "points_range": [1, 4],
+        "description": "创意小任务"
+    },
+    {
+        "id": "b4",
+        "name": "📖 小小朗读家",
+        "desc": "大声朗读一首诗或一段故事",
+        "points_range": [1, 4],
+        "description": "朗读练习"
+    },
+    {
+        "id": "b5",
+        "name": "🧹 家务小能手",
+        "desc": "做一件帮助家人的小事",
+        "points_range": [1, 4],
+        "description": "家务小帮手"
+    },
+    {
+        "id": "b6",
+        "name": "🎲 蛋仔技巧",
+        "desc": "教妈妈一个蛋仔走位技巧",
+        "points_range": [1, 4],
+        "description": "分享小技巧"
+    }
+]{
+    "admin_password": "admin123",
+    "streak_rule": "login",
+    "version": "1.0"
+}

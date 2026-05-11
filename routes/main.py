@@ -121,6 +121,23 @@ def register_main_routes(app):
             'completed_ids': state.get('defeated_monsters', [])
         })
 
+    @app.route('/monsters_map')
+    def monsters_map():
+        """返回任务ID到怪物图标的映射"""
+        tasks = get_tasks()
+        monsters = get_monsters()
+        monster_map = {}
+        monster_dict = {m['id']: m for m in monsters}
+
+        for task in tasks:
+            monster = monster_dict.get(task['monster_id'])
+            if monster:
+                monster_map[task['id']] = monster.get('icon', '❓')
+            else:
+                monster_map[task['id']] = '❓'
+
+        return jsonify(monster_map)
+
     @app.route('/shop')
     def shop_page():
         """商城页面"""

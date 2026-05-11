@@ -710,3 +710,97 @@ def reset_daily_tasks(child_id: str):
 
 # ========== 初始化数据库 ==========
 init_db()
+
+
+# ========== 商品管理 ==========
+
+def get_shop_items() -> List[Dict]:
+    """从数据库获取商品列表"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shop_items_config (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            price INTEGER,
+            icon TEXT,
+            type TEXT,
+            weekly_limit INTEGER,
+            description TEXT
+        )
+    ''')
+
+    cursor.execute('SELECT id, name, price, icon, type, weekly_limit, description FROM shop_items_config ORDER BY id')
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [{
+        'id': r[0],
+        'name': r[1],
+        'price': r[2],
+        'icon': r[3],
+        'type': r[4],
+        'weekly_limit': r[5],
+        'description': r[6]
+    } for r in rows]
+
+
+def save_shop_items(items: List[Dict]):
+    """保存商品列表到数据库"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS shop_items_config (id INTEGER PRIMARY KEY, name TEXT, price INTEGER, icon TEXT, type TEXT, weekly_limit INTEGER, description TEXT)')
+    cursor.execute('DELETE FROM shop_items_config')
+
+    for item in items:
+        cursor.execute(
+            'INSERT INTO shop_items_config (id, name, price, icon, type, weekly_limit, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (item['id'], item['name'], item['price'], item.get('icon', '🎁'), item.get('type', 'normal'),
+             item.get('weekly_limit'), item.get('description', '')))
+
+    conn.commit()
+    conn.close()
+
+
+def add_shop_item(item: Dict) -> Dict:
+    items = get_shop_items()
+    max_id = max([i['id'] for i in items]) if items else 0
+    new_id = max_id + 1
+    new_item = {
+        'id': new_id,
+        'name': item.get('name', '新商品'),
+        'price': item.get('price', 10),
+        'icon': item.get('icon', '🎁'),
+        'type': item.get('type', 'normal'),
+        'weekly_limit': item.get('weekly_limit'),
+        'description': item.get('description', '')
+    }
+    items.append(new_item)
+    save_shop_items(items)
+    return new_item
+
+
+def update_shop_item(item_id: int, data: Dict):
+    items = get_shop_items()
+    for item in items:
+        if item['id'] == item_id:
+            item['name'] = data.get('name', item['name'])
+            item['price'] = data.get('price', item['price'])
+            item['icon'] = data.get('icon', item['icon'])
+            item['type'] = data.get('type', item['type'])
+            item['weekly_limit'] = data.get('weekly_limit')
+            item['description'] = data.get('description', item['description'])
+            break
+    save_shop_items(items)
+
+
+def delete_shop_item(item_id: int) -> bool:
+    items = get_shop_items()
+    new_items = [i for i in items if i['id'] != item_id]
+    if len(new_items) == len(items):
+        return False
+    save_shop_items(new_items)
+    return True
