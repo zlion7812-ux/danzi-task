@@ -81,28 +81,49 @@ def register_fight_routes(app):
             if jump_count is None:
                 return jsonify({'error': '请输入跳绳个数'})
 
-            total_points, reward_desc, is_qualified = calculate_jump_rope_reward(jump_count)
+            # 检查是否是当天第一次跳绳
+            child_id = session.get('child_id', 'default_child')
+            today = datetime.now().strftime('%Y-%m-%d')
+
+            # 从数据库获取今日跳绳状态
+            # 需要在 data.py 中添加函数来存储 daily_jump_first 标识
+            # 这里简化：从 state 中获取
+            is_first_jump = not state.get('has_jumped_today', False)
+
+            total_points, reward_desc, is_qualified, is_first = calculate_jump_rope_reward(jump_count, child_id,
+                                                                                           is_first_jump)
 
             if not is_qualified:
                 return jsonify({'error': reward_desc})
 
-            is_crit = random.random() < 0.2
-            if is_crit:
-                total_points = total_points * 2
-                crit_text = " 💥暴击！💥"
+            # 更新跳绳状态
+            if is_first:
+                state['has_jumped_today'] = True
+
+            # 暴击和掉落只给首次跳绳
+            if is_first:
+                is_crit = random.random() < 0.2
+                if is_crit:
+                    total_points = total_points * 2
+                    crit_text = " 💥暴击！💥"
+                else:
+                    crit_text = ""
+
+                loot = get_random_loot()
+                loot_text = ""
+                if loot['add_points'] > 0:
+                    state['points'] += loot['add_points']
+                    add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
+                    loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
             else:
                 crit_text = ""
+                loot_text = ""
+                loot = {'add_points': 0, 'effect': '', 'name': ''}
 
             state['points'] += total_points
             add_defeated_monster(child_id, timer['task_id'])
-            add_points_record(child_id, '讨伐', total_points, f'完成任务: {task["name"]} ({reward_desc}){crit_text}', state['points'])
-
-            loot = get_random_loot()
-            loot_text = ""
-            if loot['add_points'] > 0:
-                state['points'] += loot['add_points']
-                add_points_record(child_id, '魔法掉落', loot['add_points'], f'{loot["name"]}', state['points'])
-                loot_text = f" 额外掉落 +{loot['add_points']}({loot['name']})"
+            add_points_record(child_id, '讨伐', total_points,
+                              f'完成任务: {task["name"]} ({reward_desc}){crit_text}{loot_text}', state['points'])
 
             state['active_timer'] = None
             enabled_tasks = [t for t in tasks if t.get('enabled', True)]
@@ -118,7 +139,7 @@ def register_fight_routes(app):
                 'monster_name': monster_name,
                 'points_earned': total_points,
                 'jump_count': jump_count,
-                'is_crit': is_crit,
+                'is_crit': is_first and is_crit,
                 'loot_add': loot['add_points'],
                 'loot_effect': loot['effect'],
                 'all_defeated': all_defeated

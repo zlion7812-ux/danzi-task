@@ -4,6 +4,7 @@ let defeatedIds = [];
 let portalAvailable = false;
 let currentTask = null;
 let activeTimerTaskId = null;
+let jumpRopeFirstFlag = true;  // 跳绳任务：是否是当天第一次
 
 // 任务类型判断
 function isTimerTask(taskName) {
@@ -12,6 +13,10 @@ function isTimerTask(taskName) {
 
 function isJumpRopeTask(taskName) {
     return taskName.includes('跳绳');
+}
+
+function isReciteTask(taskName) {
+    return taskName.includes('背诵');
 }
 
 // 获取任务积分描述
@@ -29,9 +34,17 @@ function getRewardDescription(task) {
 
     if (taskName.includes('跳绳')) {
         return `
-            <div class="reward-item"><span class="reward-label">🏃‍♂️ 最低门槛</span><span class="reward-value">300个</span></div>
-            <div class="reward-item"><span class="reward-label">🎯 基础奖励</span><span class="reward-value">5-7 积分</span></div>
-            <div class="reward-item"><span class="reward-label">📈 超额奖励</span><span class="reward-value">每多100个 +2 积分</span></div>
+            <div class="reward-item"><span class="reward-label">🏃‍♂️ 首次跳绳</span><span class="reward-value">300个以上：5-8分 + 超额</span></div>
+            <div class="reward-item"><span class="reward-label">📈 后续跳绳</span><span class="reward-value">每100个得2分</span></div>
+            <div class="reward-item"><span class="reward-label">📅 每日上限</span><span class="reward-value">1000个</span></div>
+            <div class="reward-item"><span class="reward-label">✨ 魔法掉落</span><span class="reward-value">仅首次有效</span></div>
+            <div class="reward-item"><span class="reward-label">💥 暴击</span><span class="reward-value">仅首次有效</span></div>
+        `;
+    }
+
+    if (taskName.includes('背诵')) {
+        return `
+            <div class="reward-item"><span class="reward-label">📚 每日背诵</span><span class="reward-value">5-8 积分</span></div>
             <div class="reward-item"><span class="reward-label">✨ 魔法掉落</span><span class="reward-value">随机 +1~5 积分</span></div>
             <div class="reward-item"><span class="reward-label">💥 暴击</span><span class="reward-value">20% 概率积分翻倍！</span></div>
         `;
@@ -65,12 +78,32 @@ function getRewardDescription(task) {
 }
 
 // 更新跳绳进度
-function updateJumpProgress(count) {
+function updateJumpProgress(count, isFirst) {
     const progressElem = document.getElementById('jumpProgress');
     if (progressElem) {
+        let needed = isFirst ? 300 : 100;
         let displayCount = Math.min(count, 1000);
-        progressElem.innerHTML = `📊 进度：${displayCount} / 1000 个`;
-        progressElem.style.color = count >= 300 ? '#44ff44' : '#ffaa44';
+        let neededCount = Math.max(0, needed - displayCount);
+        progressElem.innerHTML = `📊 进度：${displayCount} / 1000 个 | ${isFirst ? '首次需300个' : '后续每100个得2分'}`;
+        if (displayCount >= needed) {
+            progressElem.style.color = '#44ff44';
+            progressElem.innerHTML += ` ✅ 已达最低${needed}个`;
+        } else {
+            progressElem.style.color = '#ffaa44';
+            progressElem.innerHTML += ` （还差${neededCount}个）`;
+        }
+    }
+}
+
+// 显示跳绳结果
+function showJumpResult(message, isSuccess) {
+    const resultDiv = document.getElementById('lootDisplay');
+    if (resultDiv) {
+        resultDiv.innerHTML = message;
+        resultDiv.style.color = isSuccess ? '#44ff44' : '#ffaa44';
+        setTimeout(() => {
+            resultDiv.style.color = '';
+        }, 3000);
     }
 }
 
@@ -121,13 +154,14 @@ function showTaskDetail(task, monsterIcon, monsterName, isCompleted) {
     const jumpRopeSection = document.getElementById('jumpRopeSection');
     const isTimer = isTimerTask(task.name);
     const isJump = isJumpRopeTask(task.name);
+    const isRecite = isReciteTask(task.name);
 
     if (jumpRopeSection) {
         jumpRopeSection.style.display = 'none';
         const jumpInput = document.getElementById('jumpCountInput');
         if (jumpInput) {
             jumpInput.value = '';
-            jumpInput.oninput = (e) => updateJumpProgress(parseInt(e.target.value) || 0);
+            jumpInput.oninput = (e) => updateJumpProgress(parseInt(e.target.value) || 0, jumpRopeFirstFlag);
         }
     }
 
@@ -144,8 +178,10 @@ function showTaskDetail(task, monsterIcon, monsterName, isCompleted) {
                 actionBtn.innerHTML = '✅ 提交成绩';
                 actionBtn.style.display = 'flex';
                 timerSection.style.display = 'none';
-                if (jumpRopeSection) jumpRopeSection.style.display = 'block';
-                updateJumpProgress(0);
+                if (jumpRopeSection) {
+                    jumpRopeSection.style.display = 'block';
+                    updateJumpProgress(0, jumpRopeFirstFlag);
+                }
             } else if (activeTimerTaskId === task.id) {
                 actionBtn.style.display = 'none';
                 timerSection.style.display = 'block';
@@ -157,7 +193,7 @@ function showTaskDetail(task, monsterIcon, monsterName, isCompleted) {
                 if (jumpRopeSection) jumpRopeSection.style.display = 'none';
             }
         } else {
-            actionBtn.innerHTML = '⚔️ 开始讨伐';
+            actionBtn.innerHTML = isRecite ? '📚 开始背诵' : '⚔️ 开始讨伐';
             actionBtn.style.display = 'flex';
             timerSection.style.display = 'none';
             if (jumpRopeSection) jumpRopeSection.style.display = 'none';
@@ -232,25 +268,30 @@ async function endTimerTask(taskName) {
     return true;
 }
 
-async function endJumpRopeTask(taskName, jumpCount) {
+async function endJumpRopeTask(taskName, jumpCount, isFirst) {
     let resp = await fetch('/end_timer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({task_name: taskName, jump_count: jumpCount})
+        body: JSON.stringify({
+            task_name: taskName,
+            jump_count: jumpCount,
+            is_first: isFirst
+        })
     });
     let data = await resp.json();
     if (data.error) {
-        document.getElementById('lootDisplay').innerHTML = '⚠️ ' + data.error;
+        showJumpResult('⚠️ ' + data.error, false);
         return false;
     }
-    document.getElementById('lootDisplay').innerHTML = data.message;
+    showJumpResult(data.message, true);
     activeTimerTaskId = null;
     return true;
 }
 
 function getPointsHint(taskName) {
     if (taskName.includes('起床')) return '1~4';
-    if (taskName.includes('跳绳')) return '5~7+';
+    if (taskName.includes('跳绳')) return '5~8+';
+    if (taskName.includes('背诵')) return '5~8';
     if (taskName.includes('运动')) return '3~7';
     if (taskName.includes('阅读') || taskName.includes('复习')) return '3~6+';
     return '2~8';
@@ -349,16 +390,33 @@ function bindModalActions() {
         if (!currentTask) return;
         const isTimer = isTimerTask(currentTask.name);
         const isJump = isJumpRopeTask(currentTask.name);
+        const isRecite = isReciteTask(currentTask.name);
+
         if (isTimer) {
             if (isJump) {
                 let count = parseInt(document.getElementById('jumpCountInput').value);
-                if (isNaN(count) || count <= 0) { alert('请输入跳绳个数'); return; }
-                if (count < 300) { alert(`跳绳不足300个（当前${count}个），还需继续努力！`); return; }
-                showConfirm(`确认提交跳绳成绩 ${count} 个吗？`, async () => {
-                    if (await endJumpRopeTask(currentTask.name, count)) {
+                if (isNaN(count) || count <= 0) {
+                    alert('请输入跳绳个数');
+                    return;
+                }
+                let needed = jumpRopeFirstFlag ? 300 : 100;
+                if (count < needed) {
+                    alert(`跳绳不足${needed}个（当前${count}个），还差${needed - count}个，要继续努力哦！`);
+                    return;
+                }
+                let confirmMsg = jumpRopeFirstFlag
+                    ? `确认提交首次跳绳成绩 ${count} 个吗？\n基础分5-8分 + 超额奖励 + 暴击 + 掉落`
+                    : `确认提交跳绳成绩 ${count} 个吗？\n可获得 ${Math.floor(count/100)*2} 分（每100个得2分）`;
+                showConfirm(confirmMsg, async () => {
+                    if (await endJumpRopeTask(currentTask.name, count, jumpRopeFirstFlag)) {
+                        if (jumpRopeFirstFlag) {
+                            jumpRopeFirstFlag = false;
+                        }
                         hideModal();
                         await loadGameData();
-                    } else hideModal();
+                    } else {
+                        hideModal();
+                    }
                 });
             } else if (activeTimerTaskId === currentTask.id) {
                 showConfirm(`确定结束「${currentTask.name}」吗？`, async () => {
@@ -376,11 +434,14 @@ function bindModalActions() {
                 });
             }
         } else {
-            showConfirm(`确定开始讨伐「${currentTask.name}」吗？`, async () => {
+            // 普通任务（包括背诵）
+            showConfirm(`确定完成「${currentTask.name}」吗？`, async () => {
                 if (await fightMonster(currentTask.id)) {
                     hideModal();
                     await loadGameData();
-                } else hideModal();
+                } else {
+                    hideModal();
+                }
             });
         }
     };
@@ -398,6 +459,8 @@ async function loadGameData() {
         let timerData = await timerRes.json();
         activeTimerTaskId = timerData.active ? timerData.task_id : null;
     }
+    // 重置跳绳首次标志（简单处理：每天第一次加载时重置）
+    jumpRopeFirstFlag = true;
     await renderMap();
     checkFullClear();
 }

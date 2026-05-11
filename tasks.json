@@ -37,19 +37,19 @@
     },
     {
         "id": "task_5",
-        "monster_id": "mon_8",
-        "name": "阅读",
-        "description": "🐉 阅读冒险\n\n• 当天完成15-30分钟阅读\n• 读完后来找妈妈，讲一讲故事内容\n• 💥超额奖励：每多读20分钟+3分",
-        "points": 3,
+        "monster_id": "mon_14",
+        "name": "每日背诵",
+        "description": "📚 每日背诵\n\n• 每日背一段指定文章\n• 完成后请妈妈确认\n• 基础积分5-8分，暴击翻倍！",
+        "points": 6,
         "enabled": true,
         "order": 5
     },
     {
         "id": "task_6",
         "monster_id": "mon_13",
-        "name": "运动健身",
-        "description": "💪 活力运动！\n\n• 20:50 前开始运动\n• 最少运动10分钟\n• 10分钟=3分，20分钟=5分，30分钟=7分\n• 当天最多30分钟",
-        "points": 3,
+        "name": "跳绳运动",
+        "description": "🏃‍♂️ 跳绳运动\n\n• 每日首次跳绳：300个以上获5-8分+超额\n• 后续跳绳：每100个得2分\n• 每日上限1000个",
+        "points": 5,
         "enabled": true,
         "order": 6
     }

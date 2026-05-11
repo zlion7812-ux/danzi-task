@@ -89,6 +89,13 @@
         "icon": "💪",
         "default_points": 3,
         "description": "懒惰的克星，爱运动的守护者"
-    }
+    },
+    {
+    "id": "mon_14",
+    "name": "书虫",
+    "icon": "📖",
+    "default_points": 5,
+    "description": "热爱知识的小书虫，背诵的守护者"
+}
 
 ]

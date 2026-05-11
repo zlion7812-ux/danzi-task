@@ -214,3 +214,80 @@ def can_start_jump_rope():
     if now > deadline:
         return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
     return True, ""
+
+
+# ========== 跳绳任务相关 ==========
+
+# 用于存储每天的跳绳记录（内存缓存，实际应该存数据库）
+jump_rope_daily_record = {}
+
+
+def calculate_jump_rope_reward(count, child_id, is_first_of_day):
+    """
+    计算跳绳任务的积分奖励
+    参数: count - 跳绳个数
+          child_id - 孩子ID
+          is_first_of_day - 是否是当天第一次跳绳
+    返回: (总积分, 积分描述, 是否达标)
+    """
+    # 每日上限检查
+    daily_total = jump_rope_daily_record.get(child_id, 0)
+    if daily_total + count > 1000:
+        remaining = 1000 - daily_total
+        return 0, f"今日跳绳已达上限1000个，今日已跳{daily_total}个，最多还能跳{remaining}个！", False
+
+    if is_first_of_day:
+        # 首次跳绳：最低 300 个
+        if count < 300:
+            remaining = 300 - count
+            return 0, f"跳绳不足300个（当前{count}个），还差{remaining}个，要继续努力哦！", False
+
+        # 基础积分 5-8 随机
+        import random
+        base_points = random.randint(5, 8)
+
+        # 超额奖励：超过300后，每多100个 +2 分
+        extra = 0
+        if count > 300:
+            extra_blocks = (count - 300) // 100
+            extra = extra_blocks * 2
+
+        total = base_points + extra
+        reward_desc = f"首次跳绳{count}个，基础{base_points}分 + 超额{extra}分"
+
+        # 更新当日累计
+        jump_rope_daily_record[child_id] = daily_total + count
+
+        return total, reward_desc, True, True  # 最后一个是 is_first 标志
+
+    else:
+        # 后续跳绳：最低 100 个
+        if count < 100:
+            remaining = 100 - count
+            return 0, f"跳绳不足100个（当前{count}个），还差{remaining}个才能获得积分哦！", False
+
+        # 每满100个给2分
+        blocks = count // 100
+        total = blocks * 2
+        reward_desc = f"跳绳{count}个，获得{total}分（每100个得2分）"
+
+        # 更新当日累计
+        jump_rope_daily_record[child_id] = daily_total + count
+
+        return total, reward_desc, True, False
+
+
+def can_start_jump_rope():
+    """检查当前时间是否在 20:50 之前"""
+    from datetime import datetime
+    now = datetime.now()
+    deadline = now.replace(hour=20, minute=50, second=0, microsecond=0)
+    if now > deadline:
+        return False, "⚠️ 运动时间已过（20:50后），明天早点来锻炼吧！"
+    return True, ""
+
+
+def reset_jump_rope_daily_record():
+    """每天重置跳绳记录（应该在每日重置时调用）"""
+    global jump_rope_daily_record
+    jump_rope_daily_record = {}
