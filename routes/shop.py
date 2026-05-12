@@ -1,7 +1,7 @@
 from flask import request, jsonify, session
 from datetime import datetime
 from utils.data import get_child_state, update_child_state, add_points_record, get_shop_items, add_exchange_record, \
-    increment_weekly_exchange
+    increment_weekly_exchange, get_weekly_exchange_count
 from utils.game import is_weekend
 
 
@@ -24,7 +24,7 @@ def register_shop_routes(app):
         if item.get('weekly_limit'):
             week_num = datetime.today().isocalendar()[1]
             key = f"{item_id}_{week_num}"
-            count = state.get('weekly_exchanges', {}).get(key, 0)
+            count = get_weekly_exchange_count(child_id, key)
             if count >= item['weekly_limit']:
                 return jsonify({'error': f'本周已兑换{item["weekly_limit"]}次，不能再兑换了！'})
 

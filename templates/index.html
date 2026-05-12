@@ -36,7 +36,7 @@
     <div id="portalArea" style="text-align: center; margin: 15px 0;"></div>
     <div id="bonusArea" class="bonus-area" style="display: none;"><h3>✨ 传送门秘境 ✨</h3><div id="bonusList"></div></div>
     <div id="treasureArea" class="treasure-area" style="display: none;"><button class="treasure-btn" onclick="openTreasure()">🎁 开启全清宝箱 🎁</button></div>
-    <div id="lootDisplay" style="background:#1e1e2e; padding:12px; border-radius:40px; margin: 15px 0; text-align:center;">✨ 点击怪物，查看任务详情 ✨</div>
+   <div id="lootDisplay" style="background:#1e1e2e; padding:12px; border-radius:40px; margin: 15px 0; text-align:center; color: white;">✨ 点击怪物，查看任务详情 ✨</div>
 
     <div class="tab-bar">
         <button class="tab-btn" onclick="switchTab('quest')">⚔️ 讨伐</button>
@@ -64,7 +64,17 @@
                     <div class="config-hint">💡 最低300个可获得5-7分，每多100个+2分，上限1000个</div>
                 </div>
             </div>
-            <div id="modalTimerSection" style="display: none;"><div class="timer-buttons-inline"><button id="modalEndTimerBtn" class="timer-btn-inline" style="background:#aa4444;">⏹ 结束计时</button></div></div>
+            <div id="modalTimerSection" style="display: none;">
+                <div class="modal-section">
+                    <div class="modal-section-title">⏱️ 计时器</div>
+                    <div class="timer-display" id="timerDisplay" style="font-size: 2rem; text-align: center; font-family: monospace; background: #0a1a1a; padding: 10px; border-radius: 30px;">00:00</div>
+                    <div class="timer-buttons-inline" style="margin-top: 10px;">
+                        <button id="modalPauseTimerBtn" class="timer-btn-inline" style="background:#ffaa33; color:#333;">⏸ 暂停</button>
+                        <button id="modalEndTimerBtn" class="timer-btn-inline" style="background:#aa4444;">⏹ 结束计时</button>
+                    </div>
+                    <div class="config-hint" id="timerHint" style="margin-top: 8px;">⏰ 最少需要15分钟</div>
+                </div>
+            </div>
         </div>
         <div class="modal-buttons">
             <button id="modalActionBtn" class="modal-btn modal-btn-primary">⚔️ 开始讨伐</button>
@@ -73,13 +83,15 @@
     </div>
 </div>
 
-<!-- 通用确认弹窗 -->
+<!-- 确认弹窗 -->
 <div id="confirmOverlay" class="confirm-overlay">
     <div class="confirm-container">
-        <div class="confirm-body" id="confirmMessage">确定吗？</div>
+        <div class="confirm-body">
+            <div id="confirmMessage"></div>
+        </div>
         <div class="confirm-buttons">
-            <button id="confirmNoBtn" class="confirm-btn">取消</button>
-            <button id="confirmYesBtn" class="confirm-btn confirm-yes">确定</button>
+            <button id="confirmYesBtn" class="confirm-btn confirm-yes">✅ 确认</button>
+            <button id="confirmNoBtn" class="confirm-btn">❌ 取消</button>
         </div>
     </div>
 </div>

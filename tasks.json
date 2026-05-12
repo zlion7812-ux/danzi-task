@@ -12,7 +12,7 @@
         "id": "task_2",
         "monster_id": "mon_7",
         "name": "作业",
-        "description": "📚 作业讨伐\n\n• 19:30前完成学校作业\n• 字迹工整，正确率达标\n• 如果没有作业，自动转为复习时间",
+        "description": "📚 作业讨伐\n\n• 20:00前完成学校作业\n• 字迹工整，正确率达标\n• 如果没有作业，自动转为复习时间",
         "points": 5,
         "enabled": true,
         "order": 2

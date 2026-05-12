@@ -1,0 +1,25 @@
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 数据库
+*.db
+*.sqlite
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 日志
+*.log
+
+# 环境变量
+.env

@@ -4,6 +4,7 @@ let monstersData = [];
 let currentTaskId = null;
 let currentShopId = null;
 let currentPointsAction = null;
+let currentEditMonsterId = null;
 
 // ========== 通用加载 ==========
 async function adminLoadData() {
@@ -146,7 +147,33 @@ function renderMonsterList(monsters) {
 }
 
 function adminShowAddMonsterForm() {
+    currentEditMonsterId = null;
     document.getElementById('addMonsterForm').style.display = 'block';
+    document.getElementById('newMonsterName').value = '';
+    document.getElementById('newMonsterIcon').value = '👾';
+    document.getElementById('newMonsterPoints').value = '2';
+    document.getElementById('newMonsterDesc').value = '';
+    // 修改标题为添加模式
+    const formTitle = document.querySelector('#addMonsterForm h3');
+    if (formTitle) formTitle.innerHTML = '新建怪物';
+}
+
+async function adminEditMonster(monsterId) {
+    // 查找要编辑的怪物
+    const monster = monstersData.find(m => m.id === monsterId);
+    if (!monster) {
+        alert('怪物不存在');
+        return;
+    }
+    currentEditMonsterId = monsterId;
+    document.getElementById('addMonsterForm').style.display = 'block';
+    document.getElementById('newMonsterName').value = monster.name;
+    document.getElementById('newMonsterIcon').value = monster.icon || '👾';
+    document.getElementById('newMonsterPoints').value = monster.default_points;
+    document.getElementById('newMonsterDesc').value = monster.description || '';
+    // 修改标题为编辑模式
+    const formTitle = document.querySelector('#addMonsterForm h3');
+    if (formTitle) formTitle.innerHTML = '编辑怪物';
 }
 
 function adminHideAddMonsterForm() {
@@ -155,6 +182,7 @@ function adminHideAddMonsterForm() {
     document.getElementById('newMonsterIcon').value = '👾';
     document.getElementById('newMonsterPoints').value = '2';
     document.getElementById('newMonsterDesc').value = '';
+    currentEditMonsterId = null;
 }
 
 async function adminAddMonster() {
@@ -165,8 +193,21 @@ async function adminAddMonster() {
         description: document.getElementById('newMonsterDesc').value
     };
     if (!data.name) { alert('请输入怪物名称'); return; }
-    let resp = await fetch('/admin/add_monster', {
-        method: 'POST',
+
+    let url, method;
+    if (currentEditMonsterId) {
+        // 编辑模式
+        url = '/admin/update_monster';
+        method = 'POST';
+        data.monster_id = currentEditMonsterId;
+    } else {
+        // 添加模式
+        url = '/admin/add_monster';
+        method = 'POST';
+    }
+
+    let resp = await fetch(url, {
+        method: method,
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
     });
@@ -174,28 +215,24 @@ async function adminAddMonster() {
     if (result.status === 'ok') {
         adminHideAddMonsterForm();
         adminLoadData();
-    } else alert('添加失败');
-}
-
-async function adminEditMonster(monsterId) {
-    let newName = prompt('输入新名称');
-    if (!newName) return;
-    await fetch('/admin/update_monster', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({monster_id: monsterId, name: newName, icon: '👾', default_points: 1, description: ''})
-    });
-    adminLoadData();
+    } else {
+        alert('操作失败');
+    }
 }
 
 async function adminDeleteMonster(monsterId) {
-    if (!confirm('确定删除？')) return;
-    await fetch('/admin/delete_monster', {
+    if (!confirm('确定删除此怪物？关联的任务可能会出问题！')) return;
+    let resp = await fetch('/admin/delete_monster', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({monster_id: monsterId})
     });
-    adminLoadData();
+    let result = await resp.json();
+    if (result.status === 'ok') {
+        adminLoadData();
+    } else {
+        alert('删除失败');
+    }
 }
 
 // ========== 商品管理 ==========

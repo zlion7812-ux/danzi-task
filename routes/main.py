@@ -1,5 +1,6 @@
 from flask import render_template, session, jsonify
 from utils.data import get_tasks, get_monsters, get_child_state, get_config, get_shop_items
+from datetime import date
 
 
 def register_main_routes(app):
@@ -15,23 +16,19 @@ def register_main_routes(app):
         enabled_tasks = [t for t in tasks if t.get('enabled', True)]
         defeated = state.get('defeated_monsters', [])
 
-        # ========== 传送门条件：完成 80% 的任务即可 ==========
         required_percent = 0.8
         required_count = int(len(enabled_tasks) * required_percent)
         if required_count < 1 and len(enabled_tasks) > 0:
             required_count = 1
         all_defeated = len(defeated) >= required_count and len(enabled_tasks) > 0
-        # ===================================================
 
         bonus_active = (state.get('bonus_quests') and len(state.get('bonus_quests', [])) > 0)
 
-        # 构建怪物 ID 到怪物信息的映射字典
         monster_map = {m['id']: m for m in monsters}
 
         task_list = []
         for task in enabled_tasks:
             monster = monster_map.get(task['monster_id'])
-            # 直接从 task 中获取描述（不再使用单独的 task_details.json）
             desc = task.get('description', '')
 
             if monster:
@@ -82,22 +79,15 @@ def register_main_routes(app):
     @app.route('/reset_day', methods=['POST'])
     def reset_day():
         child_id = session.get('child_id', 'default_child')
-        state = get_child_state(child_id)
-        state['defeated_monsters'] = []
-        state['portal_used'] = False
-        state['bonus_quests'] = []
-        state['treasure_taken_today'] = False
-        from utils.data import update_child_state
-        update_child_state(child_id, state)
+        from utils.data import reset_daily_tasks
+        reset_daily_tasks(child_id)
         return {'status': 'ok'}
 
     @app.route('/reset_streak', methods=['POST'])
     def reset_streak():
         child_id = session.get('child_id', 'default_child')
-        state = get_child_state(child_id)
-        state['streak'] = 1
-        from utils.data import update_child_state
-        update_child_state(child_id, state)
+        from utils.data import update_streak
+        update_streak(child_id, 1)
         return {'status': 'ok'}
 
     @app.route('/tasks_list')
@@ -121,26 +111,8 @@ def register_main_routes(app):
             'completed_ids': state.get('defeated_monsters', [])
         })
 
-    @app.route('/monsters_map')
-    def monsters_map():
-        """返回任务ID到怪物图标的映射"""
-        tasks = get_tasks()
-        monsters = get_monsters()
-        monster_map = {}
-        monster_dict = {m['id']: m for m in monsters}
-
-        for task in tasks:
-            monster = monster_dict.get(task['monster_id'])
-            if monster:
-                monster_map[task['id']] = monster.get('icon', '❓')
-            else:
-                monster_map[task['id']] = '❓'
-
-        return jsonify(monster_map)
-
     @app.route('/shop')
     def shop_page():
-        """商城页面"""
         child_id = session.get('child_id', 'default_child')
         state = get_child_state(child_id)
         shop_items = get_shop_items()
@@ -150,10 +122,57 @@ def register_main_routes(app):
 
     @app.route('/points')
     def points_page():
-        """积分记录页面"""
         child_id = session.get('child_id', 'default_child')
         state = get_child_state(child_id)
         points_history = state.get('points_history', [])[:30]
         return render_template('points.html',
                                user_points=state['points'],
                                points_history=points_history)
+
+    @app.route('/monsters_map')
+    def monsters_map():
+        tasks = get_tasks()
+        monsters = get_monsters()
+        monster_map = {m['id']: m for m in monsters}
+
+        result = {}
+        for task in tasks:
+            monster = monster_map.get(task['monster_id'])
+            result[task['id']] = monster['icon'] if monster else '❓'
+        return jsonify(result)
+
+    @app.route('/active_timer_status')
+    def active_timer_status():
+        child_id = session.get('child_id', 'default_child')
+        state = get_child_state(child_id)
+        timer = state.get('active_timer')
+        if timer:
+            return jsonify({
+                'active': True,
+                'task_id': timer['task_id'],
+                'task_name': timer['task_name'],
+                'start_time': timer['start_time']
+            })
+        return jsonify({'active': False})
+
+    @app.route('/task_detail/<task_id>')
+    def task_detail(task_id):
+        tasks = get_tasks()
+        monsters = get_monsters()
+        monster_map = {m['id']: m for m in monsters}
+
+        task = next((t for t in tasks if t['id'] == task_id), None)
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+
+        monster = monster_map.get(task['monster_id'])
+
+        return jsonify({
+            'id': task['id'],
+            'name': task['name'],
+            'description': task.get('description', '暂无描述'),
+            'points': task.get('points', 3),
+            'monster_id': task['monster_id'],
+            'monster_name': monster['name'] if monster else '未知怪物',
+            'monster_icon': monster['icon'] if monster else '❓'
+        })
